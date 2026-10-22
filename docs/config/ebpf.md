@@ -51,6 +51,10 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
 - `packet_rewrite`：默认值，适用于普通以太网热点。
 - `socket_assign`：适用于 raw-IP、PPP 或隧道接口。
 
+`tc/socket_assign` 这种组合写法分别指本机的 `local.data_plane=tc` 和共享网络的 `shared.data_plane=socket_assign`。两条路径独立启用；只代理手机自身时使用本机 TC 即可，当前配套包的共享网络保持关闭，预存的共享数据平面不会参与本机接管。
+
+本仓库锁定版本的默认配置使用 `cgroup`；RC1.3 TC 诊断包单独覆盖为本机 `tc`。用户已反馈 TC 下问题页面“好像可以了”，仍待继续测试，当前沿 TC 路线验证。锁定核心的[入站文档](https://github.com/reF1nd/sing-box/blob/v1.15.0-alpha.11-reF1nd/docs/configuration/inbound/ebpf.md)说明 Android 厂商 netd 的 cgroup hook 可能影响挂载兼容性，并建议无法安全共享 root cgroup hook 的设备使用本机 TC；这提供排查方向，不足以确认本设备的具体根因。
+
 启用共享网络时，`shared.interface` 必须包含至少一个真实下游接口。`wlan2` 只是保存的默认偏好，不代表所有设备。接口出现、消失或成为默认上游时由 sing-box 管理 attachment；模块不会创建热点、DHCP、NAT、IPv6 RA 或 IP 转发。
 
 ## DNS、IPv6 与绕过
