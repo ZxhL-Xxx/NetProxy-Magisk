@@ -67,17 +67,20 @@ def build(base, output, sevenzip):
         inbound = json.loads((stage / 'config/inbound/inbound.json').read_text(encoding='utf-8'))
         if (inbound['backend'] != 'ebpf' or inbound['ebpf']['local']['data_plane'] != 'tc'
                 or inbound['ebpf']['shared']['data_plane'] != 'socket_assign'):
-            raise ValueError('RC1.4 requires the source TC/socket_assign profile')
+            raise ValueError('RC1.5 requires the source TC/socket_assign profile')
         preset = stage / 'compat/agh'
         preset.mkdir(parents=True)
         shutil.copyfile(stage / 'config/singbox/config.json', preset / 'config.json')
         shutil.copyfile(stage / 'config/inbound/inbound.json', preset / 'inbound.json')
+        shutil.copyfile(ROOT / 'examples/subscription/metadata-exclude.txt', preset / 'subscription-exclude.txt')
         prop = stage / 'module.prop'
         prop.write_text('id=netproxy\nname=NetProxy (AGH RC1)\n'
-            'version=v8.6.1-agh-rc1.4\nversionCode=1093\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
+            'version=v8.6.1-agh-rc1.5\nversionCode=1094\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
             'description=Local AGH RC1 paired test; TC/socket_assign; ad filtering by AGH\n'
             'webuiIcon=webroot/netproxy/favicon.svg\n', encoding='utf-8', newline='\n')
-        manifest = {'profile': '20261022-rc1-netproxy.4', 'kind': 'local-test-overlay',
+        manifest = {'profile': '20261022-rc1-netproxy.5', 'kind': 'local-test-overlay',
+            'global_selection': '总模式 -> Proxy (NetProxy node page)',
+            'subscription_exclude_requires_user_setting': True,
             'ebpf_data_plane': inbound['ebpf']['local']['data_plane'],
             'ebpf_shared_data_plane': inbound['ebpf']['shared']['data_plane'],
             'ebpf_shared_enabled': inbound['ebpf']['shared']['enabled'],

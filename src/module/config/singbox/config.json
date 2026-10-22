@@ -412,14 +412,7 @@
       "type": "selector",
       "tag": "总模式",
       "outbounds": [
-        "Proxy",
-        "香港",
-        "台湾",
-        "日本",
-        "美国",
-        "新加坡",
-        "其他地区",
-        "All Proxies"
+        "Proxy"
       ],
       "default": "Proxy",
       "interrupt_exist_connections": true
@@ -435,7 +428,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -452,7 +444,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -469,7 +460,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -486,7 +476,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -503,7 +492,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -520,7 +508,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -537,7 +524,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -554,7 +540,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -571,7 +556,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -588,7 +572,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -605,7 +588,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -622,7 +604,6 @@
         "美国",
         "新加坡",
         "其他地区",
-        "All Proxies",
         "direct"
       ],
       "default": "总模式",
@@ -633,48 +614,47 @@
       "tag": "香港",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
-      "include": "(?i)香港|港|hong[ _-]?kong|\\bhk\\b|🇭🇰"
+      "include": "(?i)香港|港|hong[ _-]?kong|\\bhk\\b|🇭🇰",
+      "exclude": "(?i)(?:\\b(?:traffic|bandwidth|expire(?:s|d)?|expiration|expiry|quota|balance|reset(?:s)?|remaining(?:[ _-]+(?:traffic|data|bandwidth))?|used[ _-]+(?:traffic|data)|total[ _-]+(?:traffic|data|bandwidth))\\s*[:：=]|剩[余餘]流量|流量剩[余餘]|[已总總]用流量|[总總]流量|流量[：:]|[到过過]期|有效期|[下本]次重置|距[离離]重置|重置[时時][间間])"
     },
     {
       "type": "selector",
       "tag": "台湾",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
-      "include": "(?i)台湾|台灣|台北|台中|taiwan|taipei|\\btw\\b|🇹🇼"
+      "include": "(?i)台湾|台灣|台北|台中|taiwan|taipei|\\btw\\b|🇹🇼",
+      "exclude": "(?i)(?:\\b(?:traffic|bandwidth|expire(?:s|d)?|expiration|expiry|quota|balance|reset(?:s)?|remaining(?:[ _-]+(?:traffic|data|bandwidth))?|used[ _-]+(?:traffic|data)|total[ _-]+(?:traffic|data|bandwidth))\\s*[:：=]|剩[余餘]流量|流量剩[余餘]|[已总總]用流量|[总總]流量|流量[：:]|[到过過]期|有效期|[下本]次重置|距[离離]重置|重置[时時][间間])"
     },
     {
       "type": "selector",
       "tag": "日本",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
-      "include": "(?i)日本|东京|東京|大阪|japan|tokyo|osaka|\\bjp\\b|🇯🇵"
+      "include": "(?i)日本|东京|東京|大阪|japan|tokyo|osaka|\\bjp\\b|🇯🇵",
+      "exclude": "(?i)(?:\\b(?:traffic|bandwidth|expire(?:s|d)?|expiration|expiry|quota|balance|reset(?:s)?|remaining(?:[ _-]+(?:traffic|data|bandwidth))?|used[ _-]+(?:traffic|data)|total[ _-]+(?:traffic|data|bandwidth))\\s*[:：=]|剩[余餘]流量|流量剩[余餘]|[已总總]用流量|[总總]流量|流量[：:]|[到过過]期|有效期|[下本]次重置|距[离離]重置|重置[时時][间間])"
     },
     {
       "type": "selector",
       "tag": "美国",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
-      "include": "(?i)美国|美國|美西|美东|洛杉矶|硅谷|西雅图|纽约|united[ _-]?states|america|los[ _-]?angeles|seattle|new[ _-]?york|\\bus\\b|\\busa\\b|🇺🇸"
+      "include": "(?i)美国|美國|美西|美东|洛杉矶|硅谷|西雅图|纽约|united[ _-]?states|america|los[ _-]?angeles|seattle|new[ _-]?york|\\bus\\b|\\busa\\b|🇺🇸",
+      "exclude": "(?i)(?:\\b(?:traffic|bandwidth|expire(?:s|d)?|expiration|expiry|quota|balance|reset(?:s)?|remaining(?:[ _-]+(?:traffic|data|bandwidth))?|used[ _-]+(?:traffic|data)|total[ _-]+(?:traffic|data|bandwidth))\\s*[:：=]|剩[余餘]流量|流量剩[余餘]|[已总總]用流量|[总總]流量|流量[：:]|[到过過]期|有效期|[下本]次重置|距[离離]重置|重置[时時][间間])"
     },
     {
       "type": "selector",
       "tag": "新加坡",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
-      "include": "(?i)新加坡|狮城|獅城|singapore|\\bsg\\b|🇸🇬"
+      "include": "(?i)新加坡|狮城|獅城|singapore|\\bsg\\b|🇸🇬",
+      "exclude": "(?i)(?:\\b(?:traffic|bandwidth|expire(?:s|d)?|expiration|expiry|quota|balance|reset(?:s)?|remaining(?:[ _-]+(?:traffic|data|bandwidth))?|used[ _-]+(?:traffic|data)|total[ _-]+(?:traffic|data|bandwidth))\\s*[:：=]|剩[余餘]流量|流量剩[余餘]|[已总總]用流量|[总總]流量|流量[：:]|[到过過]期|有效期|[下本]次重置|距[离離]重置|重置[时時][间間])"
     },
     {
       "type": "selector",
       "tag": "其他地区",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
-      "exclude": "(?i)(?:香港|港|hong[ _-]?kong|\\bhk\\b|🇭🇰)|(?:台湾|台灣|台北|台中|taiwan|taipei|\\btw\\b|🇹🇼)|(?:日本|东京|東京|大阪|japan|tokyo|osaka|\\bjp\\b|🇯🇵)|(?:美国|美國|美西|美东|洛杉矶|硅谷|西雅图|纽约|united[ _-]?states|america|los[ _-]?angeles|seattle|new[ _-]?york|\\bus\\b|\\busa\\b|🇺🇸)|(?:新加坡|狮城|獅城|singapore|\\bsg\\b|🇸🇬)"
-    },
-    {
-      "type": "selector",
-      "tag": "All Proxies",
-      "interrupt_exist_connections": true,
-      "use_all_providers": true
+      "exclude": "(?i)(?:香港|港|hong[ _-]?kong|\\bhk\\b|🇭🇰)|(?:台湾|台灣|台北|台中|taiwan|taipei|\\btw\\b|🇹🇼)|(?:日本|东京|東京|大阪|japan|tokyo|osaka|\\bjp\\b|🇯🇵)|(?:美国|美國|美西|美东|洛杉矶|硅谷|西雅图|纽约|united[ _-]?states|america|los[ _-]?angeles|seattle|new[ _-]?york|\\bus\\b|\\busa\\b|🇺🇸)|(?:新加坡|狮城|獅城|singapore|\\bsg\\b|🇸🇬)|(?:\\b(?:traffic|bandwidth|expire(?:s|d)?|expiration|expiry|quota|balance|reset(?:s)?|remaining(?:[ _-]+(?:traffic|data|bandwidth))?|used[ _-]+(?:traffic|data)|total[ _-]+(?:traffic|data|bandwidth))\\s*[:：=]|剩[余餘]流量|流量剩[余餘]|[已总總]用流量|[总總]流量|流量[：:]|[到过過]期|有效期|[下本]次重置|距[离離]重置|重置[时時][间間])"
     }
   ]
 }

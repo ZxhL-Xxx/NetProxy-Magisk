@@ -1,0 +1,1 @@
+(?i)(?:\b(?:traffic|bandwidth|expire(?:s|d)?|expiration|expiry|quota|balance|reset(?:s)?|remaining(?:[ _-]+(?:traffic|data|bandwidth))?|used[ _-]+(?:traffic|data)|total[ _-]+(?:traffic|data|bandwidth))\s*[:：=]|剩[余餘]流量|流量剩[余餘]|[已总總]用流量|[总總]流量|流量[：:]|[到过過]期|有效期|[下本]次重置|距[离離]重置|重置[时時][间間])

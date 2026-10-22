@@ -381,7 +381,9 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 
 主配置包含日志、实验特性/Clash API、DNS、用户入站、路由、HTTP Client 和 Service API。Android 的分区是 `config list` 返回的逻辑文档，不对应额外磁盘文件；完整编辑入口保留所有受核心支持的字段。运行时文件由 Go 生成并只读展示。
 
-本分支的 AGH RC1 配套预设使用 `127.0.0.2/.3 -> AGH:5591` 双通道，广告过滤及放行由 AGH 管理。国外 DoH 的固定地址通过「总模式」出站，未知 DNS 使用国外通道且不回退国内；节点引导解析独立。业务路由的 resolve 使用 DNS 规则并保留实际解析结果，不能改为仅匹配后再从 bootstrap 重复解析。Rule 模式中中国域名/IP 优先业务组，GoogleFCM/YouTube 优先 Google；保留显式 Rule 兜底，使保存其他默认模式后仍可切回 Rule。WebRTC 拒绝位于 Direct 之后、Proxy 与国内规则之前，不承诺覆盖入站绕过路径。启用的远程规则只引用 SagerNet，内置快照在 `.github/resources.json` 登记并校验；不用不存在的官方软件专属 IP 集替代域名分类。按用户最新要求，地区和全部节点选择器只通过 Provider 引用节点，不设置 `Proxy` 等显式出站或默认值。有节点时仅展示匹配节点，空地区由锁定核心产生 `Compatible` 直连占位；必须明确说明不能选择空地区，不能宣称它会拒绝连接或继续经代理。
+本分支的 AGH RC1 配套预设使用 `127.0.0.2/.3 -> AGH:5591` 双通道，广告过滤及放行由 AGH 管理。国外 DoH 的固定地址通过「总模式」出站，未知 DNS 使用国外通道且不回退国内；节点引导解析独立。业务路由的 resolve 使用 DNS 规则并保留实际解析结果，不能改为仅匹配后再从 bootstrap 重复解析。Rule 模式中中国域名/IP 优先业务组，GoogleFCM/YouTube 优先 Google；保留显式 Rule 兜底，使保存其他默认模式后仍可切回 Rule。WebRTC 拒绝位于 Direct 之后、Proxy 与国内规则之前，不承诺覆盖入站绕过路径。启用的远程规则只引用 SagerNet，内置快照在 `.github/resources.json` 登记并校验；不用不存在的官方软件专属 IP 集替代域名分类。六个地区选择器只通过 Provider 引用节点，不设置 `Proxy` 等显式出站或默认值。有节点时仅展示匹配节点，空地区由锁定核心产生 `Compatible` 直连占位；必须明确说明不能选择空地区，不能宣称它会拒绝连接或继续经代理。
+
+本分支 RC1.5 的总模式固定只有 Proxy 一个候选，跟随 NetProxy 节点页持久选择；应用及漏网之鱼统一提供总模式、五地区、其他地区、direct 八项，移除 All Proxies。不得为精简 UI 改写 Native 的运行时 Proxy 标签。六地区按名称排除流量/到期提示，表达式事实源为 examples/subscription/metadata-exclude.txt；selector.exclude 不会清理 Catalog 或 Native Auto，节点页和自动选择需由用户在每份订阅的排除设置保存并成功更新。不得宣称仅刷配置包已完成订阅入口清理，不在运行时 Shell 解析或改写 Catalog JSON。
 
 `config read` 返回 `content` 和 `revision`；`config apply/validate --revision <值> <目标> <候选文件>` 检测并发修改。`singbox/dns` 等分区使用带顶层键的 JSON，空对象删除该字段；`singbox/config.json` 替换整份主配置。保存后的 revision 对应本次实际写入内容，不通过无锁重新读取生成。
 

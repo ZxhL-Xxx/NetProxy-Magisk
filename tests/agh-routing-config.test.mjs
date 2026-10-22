@@ -114,8 +114,7 @@ test('11 个业务组按参考显示，国内域名和 IP 先于业务，FCM/You
   for (const name of names) {
     const group = config.outbounds.find(o => o.tag === name)
     assert.equal(group.default, '总模式')
-    assert(group.outbounds.includes('All Proxies'))
-    assert(group.outbounds.includes('direct'))
+    assert.deepEqual(group.outbounds, ['总模式', '香港', '台湾', '日本', '美国', '新加坡', '其他地区', 'direct'])
     assert(config.route.rules.findIndex(r => r.outbound === name) > domestic)
     assert(config.route.rules.findIndex(r => r.outbound === name) > cnip)
   }
@@ -125,9 +124,12 @@ test('11 个业务组按参考显示，国内域名和 IP 先于业务，FCM/You
   assert.equal(config.outbounds.find(o => o.tag === '漏网之鱼').default, '总模式')
 })
 
-test('地区与全部节点组只从 Provider 选节点，不嵌套 Proxy 或其他组', () => {
+test('总模式只跟随节点页 Proxy，地区只从 Provider 选节点', () => {
   const regions = ['香港', '台湾', '日本', '美国', '新加坡', '其他地区']
-  for (const name of [...regions, 'All Proxies']) {
+  assert(!config.outbounds.some(o => o.tag === 'All Proxies'))
+  assert.deepEqual(config.outbounds.find(o => o.tag === '总模式').outbounds, ['Proxy'])
+  assert.equal(config.outbounds.find(o => o.tag === '总模式').default, 'Proxy')
+  for (const name of regions) {
     const group = config.outbounds.find(o => o.tag === name)
     assert.equal(group.outbounds, undefined)
     assert.equal(group.default, undefined)
@@ -140,6 +142,25 @@ test('地区与全部节点组只从 Provider 选节点，不嵌套 Proxy 或其
   }
   for (const group of config.outbounds) visit(group.tag)
   assert(!config.outbounds.find(o => o.tag === '总模式').outbounds.includes('direct'))
+})
+
+test('地区与订阅排除规则识别流量到期提示，保留其他地区和无地名的真实节点', () => {
+  const pattern = readFileSync(resolve(root, 'examples/subscription/metadata-exclude.txt'), 'utf8').trim()
+  const regex = value => new RegExp(value.replace(/^\(\?i\)/, ''), 'iu')
+  const notices = ['Traffic: 152.28 GB / 1000 GB', 'Expire: 2027-03-03', 'Expires: 2027-01-01',
+    '香港 剩余流量：100GB', '🇯🇵 套餐到期：2027-01-01', '台湾 有效期：2027-01-01',
+    '美国 下次重置：2027-01-01', '新加坡 流量剩余：100GB', '总流量：1TB']
+  const real = ['DE test-a', '🇬🇧 London 01', '🇰🇷 Seoul 01', 'Custom Relay 01', 'US Traffic Research 01']
+  const regions = config.outbounds.filter(o => o.use_all_providers)
+  assert.equal(regions.length, 6)
+  for (const name of notices) {
+    assert(regex(pattern).test(name), name)
+    for (const region of regions) assert(regex(region.exclude).test(`fixture/${name}`), `${region.tag}: ${name}`)
+  }
+  for (const name of real) {
+    assert(!regex(pattern).test(name), name)
+    assert(!regex(regions.find(o => o.tag === '其他地区').exclude).test(`fixture/${name}`) || name.startsWith('US '), name)
+  }
 })
 
 test('路由解析使用 DNS 分流并保留结果，不经 bootstrap 二次解析；没有 FakeIP', () => {

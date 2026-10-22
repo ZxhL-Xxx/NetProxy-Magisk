@@ -4,7 +4,7 @@ description: 在 NetProxy 中创建地区与业务策略分组，配置规则集
 
 # 策略分组配置教程
 
-本分支已经提供 OpenAI、Steam、YouTube、Telegram、GitHub、Microsoft、Google 和 All Proxies，见 [RC1 配套配置](./adguardhome)。下文是上游通用扩展示例；使用本分支时不要重复导入同名组，广告规则和默认 AI 规则的位置也应以实际配置为准。
+本分支已提供 11 个业务组和六个地区组，总模式固定跟随节点页，移除 All Proxies，见 [RC1 配套配置](./adguardhome)。下文是上游通用扩展示例，包含本分支未采用的组和第三方规则来源；使用本分支时不要直接覆盖或重复导入，广告规则和默认 AI 规则的位置也应以实际配置为准。
 
 NetProxy 默认按节点来源生成 `Auto/<分组>` 和 `Select/<分组>`。如果希望进一步按地区整理节点，并为 AI、流媒体或社交应用单独选择出口，可以在 sing-box 配置中增加策略分组。
 

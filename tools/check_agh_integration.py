@@ -5,6 +5,7 @@ import copy
 import ipaddress
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -323,6 +324,11 @@ def main():
                 spy.start()
                 spies.append(spy)
                 fixture_nodes.append({'type': 'socks', 'tag': name, 'server': '127.0.0.1', 'server_port': spy.port})
+        notice_pattern = (ROOT / 'examples/subscription/metadata-exclude.txt').read_text(encoding='utf-8').strip()
+        notices = ['Traffic: 152.28 GB / 1000 GB', 'Expire: 2027-03-03',
+                   'HK 剩余流量：100GB', 'TW 有效期：2027-01-01', 'JP 套餐到期：2027-01-01',
+                   'US 下次重置：2027-01-01', 'SG 流量剩余：100GB']
+        fixture_nodes.extend({'type': 'socks', 'tag': name, 'server': '127.0.0.1', 'server_port': 9} for name in notices)
         provider_path = work / 'provider.json'
         provider_path.write_text(json.dumps({'outbounds': fixture_nodes}), encoding='utf-8')
         path = work / "sing-box.json"
@@ -365,7 +371,10 @@ def main():
                                     'tcp': tcp, 'qtype': qtype, 'answer': actual})
         api(clash_port, '/configs', {'mode': 'Rule'}, method='PATCH')
         groups = api(clash_port, '/proxies')['proxies']
-        for region, names in [*region_names.items(), ('All Proxies', [n['tag'] for n in fixture_nodes])]:
+        assert 'All Proxies' not in groups
+        assert groups['总模式']['all'] == ['Proxy'] and groups['总模式']['now'] == 'Proxy'
+        results.append({'global_follows_node_page_only': True})
+        for region, names in region_names.items():
             expected = ['fixture/' + name for name in names]
             assert groups[region]['all'] == expected, (region, groups[region], expected)
             assert groups[region]['now'] == expected[0], (region, groups[region])
@@ -430,6 +439,65 @@ def main():
         assert observed[-1][0] == 'direct', observed[-1]
         results.append({'Direct_mode_precedes_webrtc_reject': True})
         api(clash_port, '/configs', {'mode': 'Rule'}, method='PATCH')
+        process.terminate()
+        process.wait(timeout=6)
+        # 模拟用户在订阅编辑保存排除表达式后的 Provider；不声称刷包已修改手机订阅。
+        clean_nodes = [node for node in fixture_nodes if not re.search(notice_pattern, node['tag'])]
+        assert len(clean_nodes) == 7
+        provider_path.write_text(json.dumps({'outbounds': clean_nodes}), encoding='utf-8')
+        next(o for o in sb['outbounds'] if o['tag'] == 'Proxy')['tag'] = 'fixture-proxy-output'
+        sb['outbounds'].extend([
+            {'type': 'urltest', 'tag': 'Auto/fixture', 'providers': ['fixture'],
+             'url': 'http://198.51.100.254/generate_204', 'interval': '3m', 'tolerance': 50},
+            {'type': 'selector', 'tag': 'Select/fixture', 'providers': ['fixture']},
+            {'type': 'selector', 'tag': 'Proxy', 'outbounds': ['Auto/fixture', 'Select/fixture'],
+             'default': 'Auto/fixture'},
+        ])
+        source_groups = json.loads((ROOT / 'src/module/config/singbox/config.json').read_text(encoding='utf-8'))['outbounds']
+        for group in sb['outbounds']:
+            if group['tag'] in [*business_hosts, '漏网之鱼']:
+                group.update(copy.deepcopy(next(o for o in source_groups if o['tag'] == group['tag'])))
+        path.write_text(json.dumps(sb), encoding='utf-8')
+        process, log = start(args.sing_box.resolve(), ['run', '--disable-color', '-c', str(path)], work, 'sing-box-linked.log')
+        processes.append(process)
+        logs.append(log)
+        time.sleep(1)
+        if process.poll() is not None:
+            raise RuntimeError('linked-selector core exited; see ' + str(work / 'sing-box-linked.log'))
+        state = api(clash_port, '/proxies')['proxies']
+        for tag in ['Auto/fixture', 'Select/fixture']:
+            assert set(state[tag]['all']) == {'fixture/' + node['tag'] for node in clean_nodes}, state[tag]
+            results.append({'after_subscription_exclude': tag, 'only_real_nodes': state[tag]['all']})
+        for label in [*business_hosts, '漏网之鱼']:
+            expected = ['总模式', *region_names, 'direct']
+            assert state[label]['all'] == expected, (label, state[label])
+            api(clash_port, '/proxies/' + urllib.parse.quote(label, safe=''), {'name': '总模式'})
+            results.append({'eight_business_choices': label, 'items': expected})
+        for selected in ['HK test-b', 'JP test-a']:
+            api(clash_port, '/proxies/' + urllib.parse.quote('Select/fixture', safe=''), {'name': 'fixture/' + selected})
+            api(clash_port, '/proxies/Proxy', {'name': 'Select/fixture'})
+            for label, host in [*business_hosts.items(), ('漏网之鱼', 'linked-final-fixture.example')]:
+                before = len(observed)
+                connect_via_socks(mixed_port, host, 443)
+                connections = [item for item in observed[before:] if item[1:] == ('198.51.100.11', 443)]
+                assert len(connections) == 1 and connections[0][0] == selected, (label, selected, connections)
+                results.append({'node_page_selection': selected, 'business_follows': label, 'observed': connections[0][0]})
+            connect_via_socks(mixed_port, '1.1.1.1', 443)
+            assert observed[-1] == (selected, '1.1.1.1', 443), observed[-1]
+            results.append({'foreign_doh_follows_node_page': selected})
+        api(clash_port, '/proxies/' + urllib.parse.quote('日本', safe=''), {'name': 'fixture/JP test-a'})
+        api(clash_port, '/proxies/' + urllib.parse.quote('OpenAI', safe=''), {'name': '日本'})
+        api(clash_port, '/proxies/' + urllib.parse.quote('Select/fixture', safe=''), {'name': 'fixture/HK test-b'})
+        connect_via_socks(mixed_port, 'api.openai.com', 443)
+        assert observed[-1][0] == 'JP test-a', observed[-1]
+        results.append({'app_region_can_override_global': True})
+        api(clash_port, '/proxies/' + urllib.parse.quote('OpenAI', safe=''), {'name': '总模式'})
+        api(clash_port, '/proxies/Proxy', {'name': 'Auto/fixture'})
+        auto = api(clash_port, '/proxies/' + urllib.parse.quote('Auto/fixture', safe=''))
+        assert auto['now'] in {'fixture/' + node['tag'] for node in clean_nodes}, auto
+        connect_via_socks(mixed_port, 'api.openai.com', 443)
+        assert 'fixture/' + observed[-1][0] == auto['now'], (observed[-1], auto)
+        results.append({'node_page_auto_follows': auto['now'], 'requires_subscription_exclude': True})
         upstreams[0].close()
         actual = query(dns_port, "failed-proxy-path.example")
         assert actual[0] != 0, actual
@@ -447,7 +515,7 @@ def main():
         # Cold-start a subscription missing five regions. Current pinned core
         # inserts a direct Compatible placeholder; do not claim an empty group
         # rejects connections or still has a valid regional node.
-        provider_path.write_text(json.dumps({'outbounds': [n for n in fixture_nodes if n['tag'].startswith('HK ')]}), encoding='utf-8')
+        provider_path.write_text(json.dumps({'outbounds': [n for n in clean_nodes if n['tag'].startswith('HK ')]}), encoding='utf-8')
         process, log = start(args.sing_box.resolve(), ['run', '--disable-color', '-c', str(path)], work, 'sing-box-empty.log')
         processes.append(process)
         logs.append(log)
