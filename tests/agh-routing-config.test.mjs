@@ -67,11 +67,26 @@ test('国外上游连接固定经过代理，国内上游不被全局代理规�
 test('eBPF DNS 全局接管与业务筛选分离，没有国内 IP 提前绕过', () => {
   assert.equal(inbound.backend, 'ebpf')
   assert.equal(inbound.root_policy, 'include')
-  assert.equal(inbound.ebpf.local.data_plane, 'cgroup')
+  assert.equal(inbound.ebpf.local.data_plane, 'tc')
   assert.equal(inbound.ebpf.local.dns_mode, 'hijack')
   assert.deepEqual(inbound.ebpf.local.bypass_rule_set, [])
   assert.deepEqual(inbound.ebpf.shared.bypass_rule_set, [])
   assert.equal(config.route.rules[0].clash_mode, 'Direct')
+})
+
+test('共享按需启用 socket_assign，预存普通下游接口而不选择移动网络或 VPN', () => {
+  const shared = inbound.ebpf.shared
+  assert.equal(inbound.ebpf.local.enabled, true)
+  assert.equal(shared.enabled, false)
+  assert.equal(shared.data_plane, 'socket_assign')
+  assert.equal(shared.dns_mode, 'hijack')
+  assert.equal(shared.ipv6, true)
+  assert.equal(shared.bypass_private_address, true)
+  assert.equal(shared.interface.length, new Set(shared.interface).size)
+  assert(shared.interface.includes('ap0') && shared.interface.includes('wlan2') && shared.interface.includes('rndis0'))
+  for (const name of shared.interface) assert(!/^(lo|rmnet.*|ccmni.*|tun.*|netproxy)$/.test(name), name)
+  assert(config.route.rules.findIndex(r => r.action === 'hijack-dns') <
+    config.route.rules.findIndex(r => r.ip_is_private))
 })
 
 test('广告和放行交给 AGH，仅拒绝 WebRTC/STUN 相关流量', () => {

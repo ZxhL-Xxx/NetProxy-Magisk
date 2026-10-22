@@ -263,6 +263,12 @@ def main():
                 server["server_port"] = agh_port
         sb["inbounds"] = [{"type": "direct", "tag": "dns-test", "listen": "127.0.0.1", "listen_port": dns_port,
                            "override_address": "198.51.100.53", "override_port": 53}]
+        # 仅模拟已交付核心的下游 DNS；不模拟 Android 的 eBPF 挂载或热点转发。
+        shared_dns_targets = [('192.168.43.1', free_port()), ('8.8.8.8', free_port())]
+        for index, (destination, port) in enumerate(shared_dns_targets):
+            sb['inbounds'].append({'type': 'direct', 'tag': f'shared-dns-test-{index}',
+                                   'listen': '127.0.0.1', 'listen_port': port,
+                                   'override_address': destination, 'override_port': 53})
         # Only temporary loopback listeners and mock upstreams; no OS routing changes.
         udp_sink = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp_sink.bind(('127.0.0.1', 0))
@@ -341,6 +347,23 @@ def main():
             actual = query(dns_port, "fixture-block.example", qtype=qtype)
             assert actual == (0, expected), actual
             results.append({"through": "sing-box", "blocked_qtype": qtype, "answer": actual})
+        for mode in ['Rule', 'Proxy']:
+            api(clash_port, '/configs', {'mode': mode}, method='PATCH')
+            assert api(clash_port, '/configs')['mode'] == mode
+            for destination, port in shared_dns_targets:
+                for host, expected, qtype, tcp in [
+                    ('www.baidu.com', '198.51.100.22' if mode == 'Rule' else '198.51.100.11', 1, False),
+                    ('shared-foreign.example', '198.51.100.11', 1, False),
+                    ('tracking.miui.com', '198.51.100.22' if mode == 'Rule' else '198.51.100.11', 1, False),
+                    ('aiclk.com', '0.0.0.0', 1, False),
+                    ('shared-foreign-aaaa.example', '2001:db8::11', 28, False),
+                    ('shared-foreign-tcp.example', '198.51.100.11', 1, True),
+                ]:
+                    actual = query(port, host, source='127.0.0.5', qtype=qtype, tcp=tcp)
+                    assert actual == (0, expected), (mode, destination, host, actual, expected)
+                    results.append({'simulated_shared_dns': destination, 'mode': mode, 'host': host,
+                                    'tcp': tcp, 'qtype': qtype, 'answer': actual})
+        api(clash_port, '/configs', {'mode': 'Rule'}, method='PATCH')
         groups = api(clash_port, '/proxies')['proxies']
         for region, names in [*region_names.items(), ('All Proxies', [n['tag'] for n in fixture_nodes])]:
             expected = ['fixture/' + name for name in names]
@@ -413,6 +436,12 @@ def main():
         assert "failed-proxy-path.example" not in upstreams[1].questions
         assert "failed-proxy-path.example" not in upstreams[2].questions
         results.append({"foreign_failure_no_direct_fallback": actual})
+        for destination, port in shared_dns_targets:
+            host = f'failed-shared-{port}.example'
+            actual = query(port, host, source='127.0.0.5')
+            assert actual[0] != 0, (destination, actual)
+            assert host not in upstreams[1].questions and host not in upstreams[2].questions
+            results.append({'simulated_shared_dns': destination, 'foreign_failure_no_direct_fallback': actual})
         process.terminate()
         process.wait(timeout=6)
         # Cold-start a subscription missing five regions. Current pinned core

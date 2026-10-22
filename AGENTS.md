@@ -365,7 +365,7 @@ eBPF 与 TUN 只负责透明代理入站。停止服务由 sing-box 关闭并清
 
 app 关闭时保留原生 UID 筛选；开启时合并去重同向 UID/range，保留反向 UID/range 并由内核按排除优先处理，非空原生 package/user 筛选仍拒绝混用。白名单解析后与原生 include UID/range 均为空时，仅在运行时设置 `exclude_uid_range=["0:4294967294"]` 排除全部有效 UID；不能生成空 include 后静默变为全量接管，也不能注入占位 UID。仅启用 eBPF 共享网络时不查询应用 UID，不把本机应用名单当成热点客户端过滤器；eBPF DNS 保持原生 hijack/respect_policy/off 语义，不因应用名单覆盖 DNS 模式。
 
-eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。本分支默认使用 cgroup socket hook 与 `hijack` DNS，也可选择跟随默认接口的 TC；共享网络默认关闭，保存以太网 `packet_rewrite`、`hijack` DNS 与 `wlan2` 接口偏好，raw-IP、PPP 或隧道接口可选择 `socket_assign`。启用共享网络时必须配置至少一个下游接口。
+eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。本分支默认使用跟随默认接口的 `tc` 与 `hijack` DNS；共享网络默认关闭，保存 `socket_assign`、`hijack` DNS 与常见 Android 热点/USB/蓝牙接口候选。核心等待缺失接口并跳过当前默认上游，候选是精确名称，不能宣称自动发现任意下游接口。启用共享时保持本机接管，AGH 国外上游依赖 Root 本机路径；不添加运行时 Shell 自动检测或新的后台进程。AGH 的 OUTPUT 规则不覆盖任意热点转发 DNS，Direct/Wi-Fi 绕过/停代理时不能承诺下游仍被完整过滤。
 
 本分支的默认配置依赖 AGH RC1 的配套客户端：`127.0.0.2` 对应国外上游，`127.0.0.3` 对应国内上游，均继承 AGH 全局过滤并使用独立缓存；来源绑定不能省略。AGH 保留自身 iptables，承接 Direct、Wi-Fi 绕过和 NetProxy 停止后的本机普通 DNS。国外 DoH 的两个 IPv4 地址在主路由中明确经总模式，Root 接管保持 include；修改端点时必须同步 AGH 客户端和路由。DNS final 为 dns-proxy，无失败后转国内解析的配置。节点引导解析独立直连，普通补充解析按 DNS 规则选择 AGH 客户端。移除内置广告及 block 拒绝引用，不删除用户既有规则文件；默认不做 geoip/cn 提前绕过。详情与设备验证边界见 docs/config/adguardhome.md。
 

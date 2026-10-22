@@ -28,7 +28,7 @@ def run(args, **kwargs):
     return result.stdout
 
 
-def build(base, output, sevenzip, tc_test=False):
+def build(base, output, sevenzip):
     if output.exists():
         raise ValueError('Output already exists; choose a new output path')
     if sha(base.read_bytes()) != BASE_SHA:
@@ -64,27 +64,24 @@ def build(base, output, sevenzip, tc_test=False):
             if source.suffix in {'.sh', '.json', '.prop', '.txt', '.md', '.yaml'} or name.startswith('META-INF/'):
                 data = data.replace(b'\r\n', b'\n')
             target.write_bytes(data)
-        if tc_test:
-            inbound_path = stage / 'config/inbound/inbound.json'
-            inbound = json.loads(inbound_path.read_text(encoding='utf-8'))
-            if inbound['backend'] != 'ebpf':
-                raise ValueError('TC diagnostic requires the eBPF profile')
-            inbound['ebpf']['local']['data_plane'] = 'tc'
-            inbound_path.write_text(json.dumps(inbound, ensure_ascii=False, indent=2)+'\n', encoding='utf-8', newline='\n')
+        inbound = json.loads((stage / 'config/inbound/inbound.json').read_text(encoding='utf-8'))
+        if (inbound['backend'] != 'ebpf' or inbound['ebpf']['local']['data_plane'] != 'tc'
+                or inbound['ebpf']['shared']['data_plane'] != 'socket_assign'):
+            raise ValueError('RC1.4 requires the source TC/socket_assign profile')
         preset = stage / 'compat/agh'
         preset.mkdir(parents=True)
         shutil.copyfile(stage / 'config/singbox/config.json', preset / 'config.json')
         shutil.copyfile(stage / 'config/inbound/inbound.json', preset / 'inbound.json')
         prop = stage / 'module.prop'
-        suffix = '-tc-test' if tc_test else ''
-        code = 1092 if tc_test else 1091
         prop.write_text('id=netproxy\nname=NetProxy (AGH RC1)\n'
-            f'version=v8.6.1-agh-rc1.3{suffix}\nversionCode={code}\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
-            'description=Local AGH RC1 paired test; eBPF; ad filtering by AGH\n'
+            'version=v8.6.1-agh-rc1.4\nversionCode=1093\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
+            'description=Local AGH RC1 paired test; TC/socket_assign; ad filtering by AGH\n'
             'webuiIcon=webroot/netproxy/favicon.svg\n', encoding='utf-8', newline='\n')
-        manifest = {'profile': '20261022-rc1-netproxy.3' + suffix, 'kind': 'local-test-overlay',
-            'diagnostic_tc': tc_test,
-            'ebpf_data_plane': json.loads((stage / 'config/inbound/inbound.json').read_text(encoding='utf-8'))['ebpf']['local']['data_plane'],
+        manifest = {'profile': '20261022-rc1-netproxy.4', 'kind': 'local-test-overlay',
+            'ebpf_data_plane': inbound['ebpf']['local']['data_plane'],
+            'ebpf_shared_data_plane': inbound['ebpf']['shared']['data_plane'],
+            'ebpf_shared_enabled': inbound['ebpf']['shared']['enabled'],
+            'ebpf_shared_interfaces': inbound['ebpf']['shared']['interface'],
             'source_head': run(['git', 'rev-parse', 'HEAD'], cwd=ROOT).decode().strip(),
             'resource_manifest_sha256': sha((ROOT / '.github/resources.json').read_bytes()),
             'base_commit': BASE_COMMIT, 'base_release': 'v8.6.1', 'base_archive_sha256': BASE_SHA,
@@ -124,6 +121,5 @@ if __name__ == '__main__':
     parser.add_argument('base', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--sevenzip', type=Path, required=True)
-    parser.add_argument('--test-tc', action='store_true', help='Build eBPF TC diagnostic variant; keep the same DNS and routing')
     args = parser.parse_args()
-    build(args.base, args.output, args.sevenzip, args.test_tc)
+    build(args.base, args.output, args.sevenzip)

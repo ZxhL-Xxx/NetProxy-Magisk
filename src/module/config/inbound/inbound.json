@@ -18,7 +18,7 @@
     "tc_priority": 1,
     "local": {
       "enabled": true,
-      "data_plane": "cgroup",
+      "data_plane": "tc",
       "dns_mode": "hijack",
       "ipv6": true,
       "bypass_private_address": true,
@@ -26,10 +26,20 @@
     },
     "shared": {
       "enabled": false,
-      "data_plane": "packet_rewrite",
+      "data_plane": "socket_assign",
       "dns_mode": "hijack",
       "interface": [
-        "wlan2"
+        "ap0",
+        "ap1",
+        "wlan0",
+        "wlan1",
+        "wlan2",
+        "swlan0",
+        "softap0",
+        "rndis0",
+        "ncm0",
+        "usb0",
+        "bt-pan"
       ],
       "ipv6": true,
       "bypass_private_address": true,
