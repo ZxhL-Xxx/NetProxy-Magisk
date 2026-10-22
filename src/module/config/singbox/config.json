@@ -15,7 +15,8 @@
       "default_mode": "Rule",
       "external_controller": "127.0.0.1:9999",
       "secret": "singbox"
-    }
+    },
+    "urltest_unified_delay": true
   },
   "services": [
     {
@@ -40,125 +41,96 @@
     "servers": [
       {
         "tag": "dns-proxy",
-        "type": "group",
-        "servers": [
-          "cloudflare",
-          "google"
-        ]
+        "type": "udp",
+        "server": "127.0.0.1",
+        "server_port": 5591,
+        "detour": "agh-proxy-link"
       },
       {
         "tag": "dns-direct",
+        "type": "udp",
+        "server": "127.0.0.1",
+        "server_port": 5591,
+        "detour": "agh-direct-link"
+      },
+      {
+        "tag": "dns-bootstrap",
         "type": "group",
         "servers": [
-          "ali",
-          "tencent"
+          "bootstrap-ali",
+          "bootstrap-tencent"
         ]
       },
       {
         "type": "hosts",
         "tag": "hosts",
         "predefined": {
-          "doh.pub": [
-            "120.53.53.53",
-            "1.12.12.12"
-          ],
-          "cloudflare-dns.com": [
-            "1.1.1.1",
-            "1.0.0.1"
-          ],
-          "dns.google": [
-            "8.8.8.8",
-            "8.8.4.4"
-          ],
           "dns.alidns.com": [
             "223.5.5.5",
             "223.6.6.6"
+          ],
+          "doh.pub": [
+            "120.53.53.53",
+            "1.12.12.12"
           ]
         }
       },
       {
-        "tag": "cloudflare",
-        "type": "https",
-        "server": "cloudflare-dns.com",
-        "domain_resolver": "hosts",
-        "detour": "Proxy"
-      },
-      {
-        "tag": "google",
-        "type": "https",
-        "server": "dns.google",
-        "domain_resolver": "hosts",
-        "detour": "Proxy"
-      },
-      {
-        "tag": "ali",
+        "tag": "bootstrap-ali",
         "type": "https",
         "server": "dns.alidns.com",
         "domain_resolver": "hosts"
       },
       {
-        "tag": "tencent",
+        "tag": "bootstrap-tencent",
         "type": "https",
         "server": "doh.pub",
         "domain_resolver": "hosts"
       }
     ],
     "rules": [
-      { "clash_mode": "Proxy", "action": "route", "server": "dns-proxy" },
-      { "clash_mode": "Direct", "action": "route", "server": "dns-direct" },
-      { "action": "evaluate", "server": "dns-proxy" },
       {
-        "match_response": true,
+        "clash_mode": "Direct",
+        "action": "route",
+        "server": "dns-direct"
+      },
+      {
+        "clash_mode": "Proxy",
+        "action": "route",
+        "server": "dns-proxy"
+      },
+      {
         "rule_set": [
-          "direct",
+          "geosite/steam@cn",
+          "geosite/microsoft@cn",
+          "geosite/google@cn",
           "geosite/apple-cn"
         ],
         "action": "route",
         "server": "dns-direct"
       },
       {
-        "match_response": true,
         "rule_set": [
-          "proxy"
-        ],
-        "action": "route",
-        "server": "dns-proxy"
-      },
-      {
-        "type": "logical",
-        "mode": "and",
-        "rules": [
-          { "clash_mode": "RuleAllowAds", "invert": true },
-          { "match_response": true, "rule_set": ["block", "Ads_AWAvenue", "geosite/category-ads-all"] }
-        ],
-        "action": "reject"
-      },
-      {
-        "rule_set": [
-          "geosite/category-ai-!cn",
+          "geosite/openai",
+          "geosite/steam",
+          "geosite/youtube",
+          "geosite/telegram",
+          "geosite/github",
+          "geosite/microsoft",
           "geosite/google"
         ],
         "action": "route",
         "server": "dns-proxy"
       },
       {
-        "rule_set": [
-          "geosite/cn"
-        ],
+        "rule_set": "geosite/cn",
         "action": "route",
         "server": "dns-direct"
-      },
-      {
-        "rule_set": [
-          "geosite/geolocation-!cn"
-        ],
-        "action": "route",
-        "server": "dns-proxy"
       }
     ],
     "final": "dns-proxy",
-    "optimistic": true,
-    "strategy": "prefer_ipv4"
+    "strategy": "prefer_ipv4",
+    "disable_cache": true
   },
   "inbounds": [
     {
@@ -169,76 +141,174 @@
     }
   ],
   "route": {
-    "default_domain_resolver": "dns-direct",
+    "default_domain_resolver": "dns-bootstrap",
     "rule_set": [
-      { "type": "local", "tag": ["block", "direct", "proxy"], "format": "source", "path": "./rules/local/{tag}.json" },
       {
-        "type": "remote",
-        "tag": "Ads_AWAvenue",
+        "type": "local",
+        "tag": [
+          "direct",
+          "proxy"
+        ],
         "format": "source",
-        "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
-        "update_interval": "24h",
-        "path": "./rules/remote/Ads_AWAvenue.json"
+        "path": "./rules/local/{tag}.json"
       },
       {
         "type": "remote",
-        "tag": ["geosite/category-ads-all", "geosite/apple-cn", "geosite/category-ai-!cn", "geosite/google", "geosite/geolocation-!cn", "geosite/cn", "geoip/cn", "geoip/telegram"],
+        "tag": [
+          "geosite/openai",
+          "geosite/steam",
+          "geosite/youtube",
+          "geosite/telegram",
+          "geosite/github",
+          "geosite/microsoft",
+          "geosite/google",
+          "geosite/steam@cn",
+          "geosite/microsoft@cn",
+          "geosite/google@cn",
+          "geosite/apple-cn",
+          "geosite/cn",
+          "geosite/geolocation-!cn",
+          "geoip/cn",
+          "geoip/telegram"
+        ],
         "format": "binary",
         "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs",
         "update_interval": "24h",
-        "path": "./rules/remote/{tag}.srs"
+        "path": "./rules/remote/{tag}.srs",
+        "http_client": "s-download"
       }
     ],
     "rules": [
-      { "clash_mode": "Direct", "action": "route", "outbound": "direct" },
-      { "action": "sniff" },
+      {
+        "clash_mode": "Direct",
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "action": "sniff"
+      },
       {
         "type": "logical",
         "mode": "or",
         "rules": [
-          { "port": 53 },
-          { "protocol": "dns" }
+          {
+            "port": 53
+          },
+          {
+            "protocol": "dns"
+          }
         ],
         "action": "hijack-dns"
       },
-      { "clash_mode": "Proxy", "action": "route", "outbound": "Proxy" },
-      { "rule_set": "proxy", "action": "route", "outbound": "Proxy" },
-      { "rule_set": "direct", "action": "route", "outbound": "direct" },
       {
-        "type": "logical",
-        "mode": "and",
-        "rules": [
-          { "clash_mode": "RuleAllowAds", "invert": true },
-          { "rule_set": ["block", "Ads_AWAvenue", "geosite/category-ads-all"] }
+        "ip_cidr": [
+          "1.1.1.1/32",
+          "8.8.8.8/32"
         ],
-        "action": "reject"
-      },
-      {
-        "rule_set": [
-          "geosite/category-ai-!cn",
-          "geosite/google"
-        ],
+        "port": 443,
         "action": "route",
         "outbound": "Proxy"
       },
       {
+        "ip_cidr": [
+          "223.5.5.5/32",
+          "223.6.6.6/32",
+          "1.12.12.12/32",
+          "120.53.53.53/32"
+        ],
+        "port": 443,
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "Proxy",
+        "action": "route",
+        "outbound": "Proxy"
+      },
+      {
+        "rule_set": "proxy",
+        "action": "route",
+        "outbound": "Proxy"
+      },
+      {
+        "rule_set": "direct",
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
         "rule_set": [
-          "geosite/apple-cn",
-          "geosite/cn"
+          "geosite/steam@cn",
+          "geosite/microsoft@cn",
+          "geosite/google@cn",
+          "geosite/apple-cn"
         ],
         "action": "route",
         "outbound": "direct"
       },
       {
         "rule_set": [
-          "geosite/geolocation-!cn"
+          "geosite/openai"
         ],
+        "action": "route",
+        "outbound": "OpenAI"
+      },
+      {
+        "rule_set": [
+          "geosite/steam"
+        ],
+        "action": "route",
+        "outbound": "Steam"
+      },
+      {
+        "rule_set": [
+          "geosite/youtube"
+        ],
+        "action": "route",
+        "outbound": "YouTube"
+      },
+      {
+        "rule_set": [
+          "geosite/telegram",
+          "geoip/telegram"
+        ],
+        "action": "route",
+        "outbound": "Telegram"
+      },
+      {
+        "rule_set": [
+          "geosite/github"
+        ],
+        "action": "route",
+        "outbound": "GitHub"
+      },
+      {
+        "rule_set": [
+          "geosite/microsoft"
+        ],
+        "action": "route",
+        "outbound": "Microsoft"
+      },
+      {
+        "rule_set": [
+          "geosite/google"
+        ],
+        "action": "route",
+        "outbound": "Google"
+      },
+      {
+        "rule_set": "geosite/cn",
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": "geosite/geolocation-!cn",
         "action": "route",
         "outbound": "Proxy"
       },
       {
         "action": "resolve",
-        "match_only": true
+        "match_only": true,
+        "server": "dns-proxy"
       },
       {
         "rule_set": "geoip/cn",
@@ -246,24 +316,112 @@
         "outbound": "direct"
       },
       {
-        "rule_set": [
-          "geoip/telegram"
-        ],
-        "action": "route",
-        "outbound": "Proxy"
-      },
-      {
         "ip_is_private": true,
-        "outbound": "direct"
-      },
-      {
-        "clash_mode": "Rule",
         "action": "route",
-        "outbound": "Proxy"
+        "outbound": "direct"
       }
     ],
     "find_process": true,
     "auto_detect_interface": true,
     "final": "Proxy"
-  }
+  },
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "agh-proxy-link",
+      "inet4_bind_address": "127.0.0.2"
+    },
+    {
+      "type": "direct",
+      "tag": "agh-direct-link",
+      "inet4_bind_address": "127.0.0.3"
+    },
+    {
+      "type": "selector",
+      "tag": "All Proxies",
+      "outbounds": [
+        "Proxy"
+      ],
+      "default": "Proxy",
+      "use_all_providers": true,
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "OpenAI",
+      "outbounds": [
+        "Proxy",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Steam",
+      "outbounds": [
+        "Proxy",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "YouTube",
+      "outbounds": [
+        "Proxy",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Telegram",
+      "outbounds": [
+        "Proxy",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "GitHub",
+      "outbounds": [
+        "Proxy",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Microsoft",
+      "outbounds": [
+        "Proxy",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Google",
+      "outbounds": [
+        "Proxy",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    }
+  ]
 }

@@ -4,6 +4,8 @@
 
 <h1 align="center">NetProxy</h1>
 
+本分支默认配置用于与 AdGuardHome RC1 配套：七个常用业务分流、国内外 DNS 客户端和统一延迟。配套测试包可直接刷入并自动设置，步骤见[刷入说明与验证边界](docs/config/adguardhome.md)。
+
 <p align="center">
   <strong>Android 系统级 sing-box 透明代理模块</strong><br>
   eBPF / TUN · 节点与订阅 · 分应用代理 · 共享网络

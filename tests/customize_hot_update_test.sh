@@ -513,6 +513,38 @@ test_hot_update_latest_data() (
   grep -q '^__internal worker start' "$CALL_LOG"
 )
 
+test_agh_profile_snapshot() (
+  reset_modules
+  mkdir -p "$STAGE/compat/agh"
+  printf '%s\n' 'paired-config' > "$STAGE/compat/agh/config.json"
+  inbound_fixture paired > "$STAGE/compat/agh/inbound.json"
+  synchronize_agh_data_locked
+  assert_value "$STAGE/config/singbox/config.json" paired-config
+  assert_inbound "$STAGE/config/inbound/inbound.json" paired
+  assert_value "$STAGE/config/agh-compat-backup/config.json" current-config
+  assert_module "$STAGE/config/module.json" current
+  assert_value "$LIVE/config/singbox/config.json" current-config
+  INSTALLER_PID=99999999
+  sleep() {
+    module_fixture latest > "$LIVE/config/module.json"
+    printf '%s\n' 'latest-provider' > "$LIVE/data/catalog/default/provider.json"
+    printf '%s\n' 'latest-config' > "$LIVE/config/singbox/config.json"
+  }
+  with_user_data_locks() {
+    CATALOG_LOCK=data/.catalog.netproxy-test.lock
+    for entry in config/inbound/inbound.json.lock config/module.json.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
+      : > "$LIVE/$entry"
+    done
+    "$@"
+  }
+  apply_hot_update
+  assert_value "$LIVE/config/singbox/config.json" paired-config
+  assert_inbound "$LIVE/config/inbound/inbound.json" paired
+  assert_module "$LIVE/config/module.json" latest
+  assert_value "$LIVE/data/catalog/default/provider.json" latest-provider
+  assert_value "$LIVE/config/agh-compat-backup/config.json" latest-config
+)
+
 test_hot_rename_failure() (
   reset_modules
   CATALOG_LOCK=data/.catalog.netproxy-test.lock
@@ -709,6 +741,7 @@ test_manager_install
 test_hot_update
 test_hot_update_guards
 test_hot_update_latest_data
+test_agh_profile_snapshot
 test_hot_rename_failure
 test_linux_locks
 test_native_catalog_lock

@@ -59,6 +59,7 @@ run_shell_contracts() {
 build_binaries
 run_shell_contracts
 node --test "$ROOT"/.github/scripts/*.test.mjs
+node --test "$ROOT/tests/agh-routing-config.test.mjs" "$ROOT/tests/agh-boot-bridge.test.mjs"
 sh -n "$ROOT/tests/verify.sh"
 sh "$ROOT/tests/verify.sh" --help >/dev/null
 if sh "$ROOT/tests/verify.sh" invalid >/dev/null 2>&1; then

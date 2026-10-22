@@ -21,9 +21,7 @@ NetProxy 的分流行为由四层共同决定：
 
 全部直连，常用于临时停用代理。
 
-### `RuleAllowAds`（规则，允许广告）
-
-继续按规则分流，跳过默认 DNS 与路由中的广告及本地 `block` 拒绝规则。其余直连、代理规则保持生效。
+本分支默认不提供 `RuleAllowAds`。广告和误杀放行由 AGH RC1 统一负责，详见 [配套配置](./adguardhome)。
 
 ## 规则集位置
 
@@ -68,13 +66,13 @@ eBPF 的 `local.dns_mode` 与 `shared.dns_mode` 分别控制两条数据路径�
 - `respect_policy`：仅在流量通过对应数据路径的 UID、来源和地址策略后接管。
 - `off`：不由 eBPF 入站接管 DNS。
 
-本机默认 `respect_policy`，共享默认 `hijack`。TUN 使用自己的 `dns_mode`：默认 `hijack`，也有 `disabled` 与高级 `native`；`dns_address` 默认由上游推导，不能把 native 当作 Android 系统全局 DNS 设置。
+本分支本机和共享偏好均为 `hijack`，共享网络默认关闭。TUN 使用自己的 `dns_mode`：默认 `hijack`，也有 `disabled` 与高级 `native`；`dns_address` 默认由上游推导，不能把 native 当作 Android 系统全局 DNS 设置。
 
-sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/config.json` 的 `dns` 分区。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和核心实际模式共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
+sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/config.json` 的 `dns` 分区。本分支默认 DNS A/AAAA 查询使用指向 AGH 的 `dns-proxy` / `dns-direct` 客户端路径，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和核心实际模式共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
 
-本地规则集可同时包含域名和 IP。默认配置使用 `evaluate` 获取代理 DNS 响应，再以 `match_response` 匹配这些规则集，不使用旧式 DNS 地址过滤。规则模式下，直连 DNS 分流前可能先产生一次代理 DNS 查询；命中 Proxy 或 Direct 出站模式时直接使用对应 DNS。
+本地规则集可同时包含域名和 IP。本分支的 local/direct 和 local/proxy 只用于连接路由，DNS 分流使用纯域名 geosite 规则，不直接引用可能包含 IP 的本地规则集。未来需要在 DNS 中引用这类混合规则时，仍须使用 `evaluate` / `match_response`，不能采用已移除的旧式 DNS 地址过滤。
 
-默认规则模式下，`geosite/category-ai-!cn`（境外 AI）与 `geosite/google` 规则集在中国域名分流前匹配，DNS 查询与连接均走代理。`geosite/cn` 域名使用直连 DNS，随后匹配的 `geosite/geolocation-!cn` 域名使用代理 DNS；未命中规则的查询仍以 `dns-proxy` 兜底。自定义直连、代理和广告规则保持更高的匹配优先级。
+国内服务例外优先于业务组；七个业务的其他域名使用国外 AGH 客户端，国内域名使用国内 AGH 客户端，未知查询以国外客户端兜底。国内 IP 的提前绕过默认关闭；上面的 geoip/cn 示例是可选修改，加入后会削弱业务组和 Proxy 模式对这部分流量的控制。
 
 ## 排查顺序
 

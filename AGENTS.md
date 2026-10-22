@@ -311,7 +311,7 @@ data/catalog/
 - 手动模式仅保存当前分组节点的 tag，不重复保存分组 ID 或文件路径。
 - 手动节点在 Provider 更新后消失时回退该组 Auto。
 - 公开命令仍使用 `node use auto [group]` 或 `node use <group-id>/<tag>`；JSON 的 `selector_mode` 与 `selected_node_ref` 是派生结果，不是另一个持久事实源。订阅更新在配置文件锁内读取最新选择后计算变更，不能覆盖并发用户选择。
-- 出站模式使用主配置与内核生成的原生列表；默认规则的模式值为 `Rule/Proxy/Direct/RuleAllowAds`，配置、CTL 和 API 使用同一名称，不提供旧名别名。客户端翻译已知模式的显示文案，自定义名称原样显示。模式切换保存默认值，当前 Wi-Fi 绕过策略仍可使实际模式为 `Direct`。
+- 出站模式使用主配置与内核生成的原生列表；本分支默认规则的模式值为 `Rule/Proxy/Direct`，配置、CTL 和 API 使用同一名称，不提供旧名别名。客户端翻译已知模式的显示文案，自定义名称原样显示。模式切换保存默认值，当前 Wi-Fi 绕过策略仍可使实际模式为 `Direct`。
 
 ## 订阅事务
 
@@ -364,7 +364,9 @@ eBPF 与 TUN 只负责透明代理入站。停止服务由 sing-box 关闭并清
 
 app 关闭时保留原生 UID 筛选；开启时合并去重同向 UID/range，保留反向 UID/range 并由内核按排除优先处理，非空原生 package/user 筛选仍拒绝混用。白名单解析后与原生 include UID/range 均为空时，仅在运行时设置 `exclude_uid_range=["0:4294967294"]` 排除全部有效 UID；不能生成空 include 后静默变为全量接管，也不能注入占位 UID。仅启用 eBPF 共享网络时不查询应用 UID，不把本机应用名单当成热点客户端过滤器；eBPF DNS 保持原生 hijack/respect_policy/off 语义，不因应用名单覆盖 DNS 模式。
 
-eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。本机默认使用 cgroup socket hook 与 `respect_policy` DNS，也可选择跟随默认接口的 TC；共享网络默认关闭，保存以太网 `packet_rewrite`、`hijack` DNS 与 `wlan2` 接口偏好，raw-IP、PPP 或隧道接口可选择 `socket_assign`。启用共享网络时必须配置至少一个下游接口。
+eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。本分支默认使用 cgroup socket hook 与 `hijack` DNS，也可选择跟随默认接口的 TC；共享网络默认关闭，保存以太网 `packet_rewrite`、`hijack` DNS 与 `wlan2` 接口偏好，raw-IP、PPP 或隧道接口可选择 `socket_assign`。启用共享网络时必须配置至少一个下游接口。
+
+本分支的默认配置依赖 AGH RC1 的配套客户端：`127.0.0.2` 对应国外上游，`127.0.0.3` 对应国内上游，均继承 AGH 全局过滤并使用独立缓存；来源绑定不能省略。AGH 保留自身 iptables，承接 Direct、Wi-Fi 绕过和 NetProxy 停止后的本机普通 DNS。国外 DoH 的两个 IPv4 地址在主路由中明确经 Proxy，Root 接管保持 include；修改端点时必须同步 AGH 客户端和路由。DNS final 为 dns-proxy，无失败后转国内解析的配置。节点引导解析独立直连，普通补充解析显式使用 dns-proxy。移除内置广告及 block 拒绝引用，不删除用户既有规则文件；默认不做 geoip/cn 提前绕过。详情与设备验证边界见 docs/config/adguardhome.md。
 
 TUN 使用原生 `include_interface/exclude_interface`、CIDR、规则集与 MAC 筛选，不建立 local/shared/hybrid 映射。默认接口 `netproxy`、地址 `172.19.0.1/30` 与 `fdfe:dcba:9876::1/126`、DNS `hijack`；不输出 stack 或额外默认 MTU/strict_route/marks。目标 sing-box check 不等于设备能力证明，TUN、NFQUEUE、IPv6 TPROXY 与清理仍需真机确认。eBPF 能力探测继续使用 `ebpf status`，不新增 `tun status`。
 

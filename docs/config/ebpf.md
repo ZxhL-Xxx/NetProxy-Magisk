@@ -15,10 +15,10 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
     "local": {
       "enabled": true,
       "data_plane": "cgroup",
-      "dns_mode": "respect_policy",
+      "dns_mode": "hijack",
       "ipv6": true,
       "bypass_private_address": true,
-      "bypass_rule_set": ["geoip/cn"]
+      "bypass_rule_set": []
     },
     "shared": {
       "enabled": false,
@@ -27,7 +27,7 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
       "interface": ["wlan2"],
       "ipv6": true,
       "bypass_private_address": true,
-      "bypass_rule_set": ["geoip/cn"]
+      "bypass_rule_set": []
     }
   }
 }
@@ -58,10 +58,10 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
 本机和共享网络各自设置 `dns_mode`、`ipv6`、`bypass_private_address`、`bypass_rule_set`、`bypass_port` 与 `bypass_port_range`：
 
 - `hijack`：优先接管可见的 TCP/UDP 53 流量。
-- `respect_policy`：先应用该路径的筛选与绕过策略，再接管 DNS；这是本机默认值。
+- `respect_policy`：先应用该路径的筛选与绕过策略，再接管 DNS。
 - `off`：不由该路径接管 DNS。
 
-`ipv6: false` 仅绕过该路径的 IPv6，不关闭系统 IPv6。`bypass_rule_set` 默认引用 `geoip/cn`，只使用可提取的 IP CIDR；命中流量不会进入普通路由，`Proxy` 模式也不能覆盖提前绕过。
+本分支本机默认 `hijack`，与 AGH 的配套方式见 [RC1 配置](./adguardhome)。`ipv6: false` 仅绕过该路径的 IPv6，不关闭系统 IPv6。`bypass_rule_set` 默认空，国内直连在主路由中完成；手工加入绕过规则集时只使用可提取的 IP CIDR，命中流量不会进入普通路由，`Proxy` 模式也不能覆盖提前绕过。
 
 `bypass_port` 使用数字数组，例如 `[22, 443]`；`bypass_port_range` 使用字符串数组，例如 `["1000:2000"]`，不是逗号文本。
 

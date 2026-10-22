@@ -356,6 +356,22 @@ copy_user_data_locked() {
   rm -rf "$snapshot"
 }
 
+# 本地配套测试包显式启用预设；官方普通包没有 compat/agh 时保持原安装行为。
+# 只修改暂存模块，前台与后台最新快照后都重新应用，不提前写 live。
+apply_agh_profile() {
+  local preset="$MODPATH/compat/agh" backup="$MODPATH/config/agh-compat-backup"
+  [ -d "$preset" ] || return 0
+  [ -s "$preset/config.json" ] && [ -s "$preset/inbound.json" ] || return 1
+  if [ "$INSTALL_MODE" = preserve ] && [ ! -d "$backup" ]; then
+    mkdir -p "$backup" || return 1
+    cp -p "$MODPATH/config/singbox/config.json" "$backup/config.json" \
+      && cp -p "$MODPATH/config/inbound/inbound.json" "$backup/inbound.json" || return 1
+    chmod 0700 "$backup" && chmod 0600 "$backup"/* || return 1
+  fi
+  cp "$preset/config.json" "$MODPATH/config/singbox/config.json" \
+    && cp "$preset/inbound.json" "$MODPATH/config/inbound/inbound.json"
+}
+
 #######################################
 # 参数: 锁文件列表、--、持锁回调。
 # 返回: 0=成功，非零=锁忙或操作失败。
@@ -413,7 +429,11 @@ with_user_data_locks() (
 # 返回: 0=当前事务已恢复且快照完成，1=失败。
 synchronize_user_data() {
   [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
-  with_user_data_locks copy_user_data_locked
+  with_user_data_locks synchronize_agh_data_locked
+}
+
+synchronize_agh_data_locked() {
+  copy_user_data_locked && apply_agh_profile
 }
 
 #######################################
@@ -440,7 +460,7 @@ write_log() {
 #######################################
 commit_hot_update() {
   local backup_dir="$(dirname "$LIVE_DIR")/.netproxy.install-backup.$$" entry
-  copy_user_data_locked && set_permissions || return 1
+  copy_user_data_locked && apply_agh_profile && set_permissions || return 1
   NETPROXY_MODULE_DIR="$MODPATH" "$MODPATH/bin/netproxyctl" api init >/dev/null 2>&1 || return 1
   rm -f "$MODPATH/data"/.catalog.netproxy-*.lock || return 1
   # 等待中的 Go 命令必须继续使用原来的锁，而不是目录切换后的第二个锁。
@@ -557,8 +577,17 @@ print_step "解压与校验安装包..."
 unzip -o "$ZIPFILE" -x 'META-INF/*' -d "$MODPATH" >/dev/null 2>&1 \
   && [ -s "$MODPATH/NetProxy.apk" ] && validate_stage && set_permissions \
   || { print_error "安装包或权限检查失败"; exit 1; }
+if [ -d "$MODPATH/compat/agh" ] && [ ! -s /data/adb/agh/bin/AdGuardHome.yaml ]; then
+  print_error "请先刷入配套 ADG RC1 模块，再安装本包；当前模块未替换"
+  exit 1
+fi
 install_bundled_manager || { print_error "管理器安装步骤失败"; exit 1; }
 print_title "安装模块"
+if [ -d "$MODPATH/compat/agh" ]; then
+  ui_print "  本包自动启用 AGH RC1 配套分流与 eBPF 入站；节点和订阅按所选方式保留"
+  ui_print "  保留数据升级时，原内核与入站配置备份到 config/agh-compat-backup"
+  ui_print "  请先刷入配套 ADG，再刷入本包，最后重启设备"
+fi
 ui_print "  安装完成前请勿修改模块配置、节点或订阅"
 synchronize_user_data && set_permissions || { print_error "保留用户数据或权限设置失败"; exit 1; }
 NETPROXY_MODULE_DIR="$MODPATH" "$MODPATH/bin/netproxyctl" api init > "$INSTALL_TMP/api.log" 2>&1 \

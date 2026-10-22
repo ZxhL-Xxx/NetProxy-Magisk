@@ -1,5 +1,7 @@
 # sing-box 配置
 
+本分支的默认配置为 [AGH RC1 配套方案](./adguardhome)，需要先配置 AGH 的两个本地客户端，再导入主配置和入站配置。上游通用教程中的示例不代表本分支的完整默认值。
+
 NetProxy 的 sing-box 配置位于：
 
 ```text

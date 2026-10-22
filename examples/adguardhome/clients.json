@@ -1,0 +1,18 @@
+[
+  {
+    "name": "NetProxy Proxy DNS",
+    "ids": ["127.0.0.2"],
+    "use_global_settings": true,
+    "upstreams": ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"],
+    "upstreams_cache_enabled": true,
+    "upstreams_cache_size": 4194304
+  },
+  {
+    "name": "NetProxy Direct DNS",
+    "ids": ["127.0.0.3"],
+    "use_global_settings": true,
+    "upstreams": ["https://223.5.5.5/dns-query", "https://1.12.12.12/dns-query"],
+    "upstreams_cache_enabled": true,
+    "upstreams_cache_size": 4194304
+  }
+]
