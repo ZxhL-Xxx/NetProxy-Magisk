@@ -110,12 +110,12 @@ test('11 个业务组按参考显示，国内域名和 IP 先于业务，FCM/You
   assert.equal(config.outbounds.find(o => o.tag === '漏网之鱼').default, '总模式')
 })
 
-test('地区没有匹配节点时明确回到 Proxy，选择器无环且不重复生成测速', () => {
+test('地区与全部节点组只从 Provider 选节点，不嵌套 Proxy 或其他组', () => {
   const regions = ['香港', '台湾', '日本', '美国', '新加坡', '其他地区']
   for (const name of [...regions, 'All Proxies']) {
     const group = config.outbounds.find(o => o.tag === name)
-    assert.deepEqual(group.outbounds, ['Proxy'])
-    assert.equal(group.default, 'Proxy')
+    assert.equal(group.outbounds, undefined)
+    assert.equal(group.default, undefined)
     assert(group.use_all_providers)
   }
   assert(!config.outbounds.some(o => o.type === 'urltest'))

@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 
 import yaml
@@ -240,6 +241,9 @@ def main():
         for source, suffix in (("127.0.0.2", 11), ("127.0.0.3", 22)):
             for host, expected in (("fixture-cache.example", f"198.51.100.{suffix}"),
                                    ("fixture-allow.example", f"198.51.100.{suffix}"),
+                                   ("paileactivist.github.io", f"198.51.100.{suffix}"),
+                                   ("docs.qq.com", f"198.51.100.{suffix}"),
+                                   ("doc.weixin.qq.com", f"198.51.100.{suffix}"),
                                    ("tracking.miui.com", f"198.51.100.{suffix}"),
                                    ("aiclk.com", "0.0.0.0"), ("fixture-block.example", "0.0.0.0")):
                 actual = query(agh_port, host, source)
@@ -301,7 +305,20 @@ def main():
         # Detect accidental use of the bootstrap resolver during business resolution.
         sb['dns']['servers'].append({'type': 'udp', 'tag': 'fixture-bootstrap', 'server': '127.0.0.1', 'server_port': upstreams[2].port})
         next(s for s in sb['dns']['servers'] if s['tag'] == 'dns-bootstrap')['servers'] = ['fixture-bootstrap']
-        (work / "provider.json").write_text(json.dumps({"outbounds": [{"type": "socks", "tag": "fixture-node", "server": "127.0.0.1", "server_port": 9}]}), encoding="utf-8")
+        region_names = {
+            '香港': ['HK test-a', 'HK test-b'], '台湾': ['TW test-a'],
+            '日本': ['JP test-a'], '美国': ['US test-a'],
+            '新加坡': ['SG test-a'], '其他地区': ['DE test-a'],
+        }
+        fixture_nodes = []
+        for names in region_names.values():
+            for name in names:
+                spy = SocksSpy(name, observed)
+                spy.start()
+                spies.append(spy)
+                fixture_nodes.append({'type': 'socks', 'tag': name, 'server': '127.0.0.1', 'server_port': spy.port})
+        provider_path = work / 'provider.json'
+        provider_path.write_text(json.dumps({'outbounds': fixture_nodes}), encoding='utf-8')
         path = work / "sing-box.json"
         path.write_text(json.dumps(sb), encoding="utf-8")
         process, log = start(args.sing_box.resolve(), ["run", "--disable-color", "-c", str(path)], work, "sing-box.log")
@@ -312,6 +329,7 @@ def main():
             raise RuntimeError("sing-box exited; see " + str(work / "sing-box.log"))
         for host, suffix in (*[(h, 11) for h in business_hosts.values()],
                              ("www.baidu.com", 22), ("steamchina.com", 22), ("download.microsoft.com", 22),
+                             ("paileactivist.github.io", 11), ("docs.qq.com", 22), ("doc.weixin.qq.com", 22),
                              ("dl.google.com", 22), ("fixture-unknown.example", 11)):
             actual = query(dns_port, host)
             assert actual == (0, f"198.51.100.{suffix}"), (host, actual, suffix)
@@ -324,13 +342,11 @@ def main():
             assert actual == (0, expected), actual
             results.append({"through": "sing-box", "blocked_qtype": qtype, "answer": actual})
         groups = api(clash_port, '/proxies')['proxies']
-        for region in ['香港', '台湾', '日本', '美国', '新加坡', '其他地区', 'All Proxies']:
-            assert groups[region]['now'] == 'Proxy', (region, groups[region])
-            if region not in ('其他地区', 'All Proxies'):
-                assert groups[region]['all'] == ['Proxy'], (region, groups[region])
-            else:
-                assert any(n.endswith('/fixture-node') for n in groups[region]['all']), (region, groups[region])
-            results.append({'region_default': region, 'selected': 'Proxy'})
+        for region, names in [*region_names.items(), ('All Proxies', [n['tag'] for n in fixture_nodes])]:
+            expected = ['fixture/' + name for name in names]
+            assert groups[region]['all'] == expected, (region, groups[region], expected)
+            assert groups[region]['now'] == expected[0], (region, groups[region])
+            results.append({'region_only_nodes': region, 'items': expected, 'selected': expected[0]})
         for label, host in business_hosts.items():
             before = len(observed)
             connect_via_socks(mixed_port, host)
@@ -340,6 +356,8 @@ def main():
         upstreams[0].answers['cn-ip.openai.com'] = '114.114.114.114'
         for host, expected in [('cn-ip.openai.com', 'direct'), ('www.baidu.com', 'direct'),
                                ('download.microsoft.com', 'direct'), ('114.114.114.114', 'direct'),
+                               ('paileactivist.github.io', 'GitHub'), ('docs.qq.com', 'direct'),
+                               ('doc.weixin.qq.com', 'direct'),
                                ('203.0.113.5', '漏网之鱼'), ('route-final-fixture.example', '漏网之鱼'),
                                ('1.1.1.1', 'Proxy'), ('223.5.5.5', 'direct')]:
             connect_via_socks(mixed_port, host, 443 if host in ('1.1.1.1', '223.5.5.5') else 80)
@@ -347,6 +365,16 @@ def main():
             results.append({'priority_route': host, 'outbound': expected, 'destination': observed[-1][1]})
         assert not upstreams[2].questions, upstreams[2].questions
         results.append({'business_lookup_never_uses_bootstrap': True})
+        # Select real regional nodes and prove the connection reaches that node,
+        # rather than the unrelated top-level Proxy selector.
+        for region, names in region_names.items():
+            selected = names[-1]
+            api(clash_port, '/proxies/' + urllib.parse.quote(region, safe=''), {'name': 'fixture/' + selected})
+            api(clash_port, '/proxies/' + urllib.parse.quote('漏网之鱼', safe=''), {'name': region})
+            connect_via_socks(mixed_port, 'region-route-fixture.example')
+            assert observed[-1][0] == selected, (region, observed[-1])
+            results.append({'region_routes_to_node': region, 'selected': selected, 'observed': observed[-1][0]})
+        api(clash_port, '/proxies/' + urllib.parse.quote('漏网之鱼', safe=''), {'name': 'fixture-漏网之鱼'})
         # A valid STUN Binding request on a nonstandard port must be rejected;
         # an unrelated UDP payload must still reach the very same local sink.
         stun = struct.pack('!HHI', 1, 0, 0x2112A442) + b'fixture-stun'
@@ -385,6 +413,25 @@ def main():
         assert "failed-proxy-path.example" not in upstreams[1].questions
         assert "failed-proxy-path.example" not in upstreams[2].questions
         results.append({"foreign_failure_no_direct_fallback": actual})
+        process.terminate()
+        process.wait(timeout=6)
+        # Cold-start a subscription missing five regions. Current pinned core
+        # inserts a direct Compatible placeholder; do not claim an empty group
+        # rejects connections or still has a valid regional node.
+        provider_path.write_text(json.dumps({'outbounds': [n for n in fixture_nodes if n['tag'].startswith('HK ')]}), encoding='utf-8')
+        process, log = start(args.sing_box.resolve(), ['run', '--disable-color', '-c', str(path)], work, 'sing-box-empty.log')
+        processes.append(process)
+        logs.append(log)
+        time.sleep(1)
+        if process.poll() is not None:
+            raise RuntimeError('empty-region core exited; see ' + str(work / 'sing-box-empty.log'))
+        state = api(clash_port, '/proxies')['proxies']
+        assert state['Compatible']['type'] == 'Direct', state['Compatible']
+        for region in ['台湾', '日本', '美国', '新加坡', '其他地区']:
+            assert state[region]['all'] == ['Compatible'], (region, state[region])
+            results.append({'empty_region_core_placeholder': region, 'selected': state[region]['now'],
+                            'core_placeholder_is_direct': True, 'not_a_recommended_selection': True})
+        assert state['香港']['all'] == ['fixture/HK test-a', 'fixture/HK test-b'], state['香港']
         process.terminate()
         process.wait(timeout=6)
         for host, expected in (("after-stop.example", "198.51.100.33"), ("fixture-block.example", "0.0.0.0")):

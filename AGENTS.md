@@ -367,7 +367,7 @@ app 关闭时保留原生 UID 筛选；开启时合并去重同向 UID/range，�
 
 eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。本分支默认使用 cgroup socket hook 与 `hijack` DNS，也可选择跟随默认接口的 TC；共享网络默认关闭，保存以太网 `packet_rewrite`、`hijack` DNS 与 `wlan2` 接口偏好，raw-IP、PPP 或隧道接口可选择 `socket_assign`。启用共享网络时必须配置至少一个下游接口。
 
-本分支的默认配置依赖 AGH RC1 的配套客户端：`127.0.0.2` 对应国外上游，`127.0.0.3` 对应国内上游，均继承 AGH 全局过滤并使用独立缓存；来源绑定不能省略。AGH 保留自身 iptables，承接 Direct、Wi-Fi 绕过和 NetProxy 停止后的本机普通 DNS。国外 DoH 的两个 IPv4 地址在主路由中明确经 Proxy，Root 接管保持 include；修改端点时必须同步 AGH 客户端和路由。DNS final 为 dns-proxy，无失败后转国内解析的配置。节点引导解析独立直连，普通补充解析显式使用 dns-proxy。移除内置广告及 block 拒绝引用，不删除用户既有规则文件；默认不做 geoip/cn 提前绕过。详情与设备验证边界见 docs/config/adguardhome.md。
+本分支的默认配置依赖 AGH RC1 的配套客户端：`127.0.0.2` 对应国外上游，`127.0.0.3` 对应国内上游，均继承 AGH 全局过滤并使用独立缓存；来源绑定不能省略。AGH 保留自身 iptables，承接 Direct、Wi-Fi 绕过和 NetProxy 停止后的本机普通 DNS。国外 DoH 的两个 IPv4 地址在主路由中明确经总模式，Root 接管保持 include；修改端点时必须同步 AGH 客户端和路由。DNS final 为 dns-proxy，无失败后转国内解析的配置。节点引导解析独立直连，普通补充解析按 DNS 规则选择 AGH 客户端。移除内置广告及 block 拒绝引用，不删除用户既有规则文件；默认不做 geoip/cn 提前绕过。详情与设备验证边界见 docs/config/adguardhome.md。
 
 TUN 使用原生 `include_interface/exclude_interface`、CIDR、规则集与 MAC 筛选，不建立 local/shared/hybrid 映射。默认接口 `netproxy`、地址 `172.19.0.1/30` 与 `fdfe:dcba:9876::1/126`、DNS `hijack`；不输出 stack 或额外默认 MTU/strict_route/marks。目标 sing-box check 不等于设备能力证明，TUN、NFQUEUE、IPv6 TPROXY 与清理仍需真机确认。eBPF 能力探测继续使用 `ebpf status`，不新增 `tun status`。
 
@@ -381,7 +381,7 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 
 主配置包含日志、实验特性/Clash API、DNS、用户入站、路由、HTTP Client 和 Service API。Android 的分区是 `config list` 返回的逻辑文档，不对应额外磁盘文件；完整编辑入口保留所有受核心支持的字段。运行时文件由 Go 生成并只读展示。
 
-本分支的 AGH RC1 配套预设使用 `127.0.0.2/.3 -> AGH:5591` 双通道，广告过滤及放行由 AGH 管理。国外 DoH 的固定地址通过「总模式」出站，未知 DNS 使用国外通道且不回退国内；节点引导解析独立。业务路由的 resolve 使用 DNS 规则并保留实际解析结果，不能改为仅匹配后再从 bootstrap 重复解析。Rule 模式中中国域名/IP 优先业务组，GoogleFCM/YouTube 优先 Google；保留显式 Rule 兜底，使保存其他默认模式后仍可切回 Rule。WebRTC 拒绝位于 Direct 之后、Proxy 与国内规则之前，不承诺覆盖入站绕过路径。启用的远程规则只引用 SagerNet，内置快照在 `.github/resources.json` 登记并校验；不用不存在的官方软件专属 IP 集替代域名分类。地区选择器必须有显式 `Proxy` 依赖及默认值，空地区不能落入核心的 Compatible 直连回退。
+本分支的 AGH RC1 配套预设使用 `127.0.0.2/.3 -> AGH:5591` 双通道，广告过滤及放行由 AGH 管理。国外 DoH 的固定地址通过「总模式」出站，未知 DNS 使用国外通道且不回退国内；节点引导解析独立。业务路由的 resolve 使用 DNS 规则并保留实际解析结果，不能改为仅匹配后再从 bootstrap 重复解析。Rule 模式中中国域名/IP 优先业务组，GoogleFCM/YouTube 优先 Google；保留显式 Rule 兜底，使保存其他默认模式后仍可切回 Rule。WebRTC 拒绝位于 Direct 之后、Proxy 与国内规则之前，不承诺覆盖入站绕过路径。启用的远程规则只引用 SagerNet，内置快照在 `.github/resources.json` 登记并校验；不用不存在的官方软件专属 IP 集替代域名分类。按用户最新要求，地区和全部节点选择器只通过 Provider 引用节点，不设置 `Proxy` 等显式出站或默认值。有节点时仅展示匹配节点，空地区由锁定核心产生 `Compatible` 直连占位；必须明确说明不能选择空地区，不能宣称它会拒绝连接或继续经代理。
 
 `config read` 返回 `content` 和 `revision`；`config apply/validate --revision <值> <目标> <候选文件>` 检测并发修改。`singbox/dns` 等分区使用带顶层键的 JSON，空对象删除该字段；`singbox/config.json` 替换整份主配置。保存后的 revision 对应本次实际写入内容，不通过无锁重新读取生成。
 

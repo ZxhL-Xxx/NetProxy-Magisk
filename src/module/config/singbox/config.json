@@ -631,10 +631,6 @@
     {
       "type": "selector",
       "tag": "香港",
-      "outbounds": [
-        "Proxy"
-      ],
-      "default": "Proxy",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
       "include": "(?i)香港|港|hong[ _-]?kong|\\bhk\\b|🇭🇰"
@@ -642,10 +638,6 @@
     {
       "type": "selector",
       "tag": "台湾",
-      "outbounds": [
-        "Proxy"
-      ],
-      "default": "Proxy",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
       "include": "(?i)台湾|台灣|台北|台中|taiwan|taipei|\\btw\\b|🇹🇼"
@@ -653,10 +645,6 @@
     {
       "type": "selector",
       "tag": "日本",
-      "outbounds": [
-        "Proxy"
-      ],
-      "default": "Proxy",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
       "include": "(?i)日本|东京|東京|大阪|japan|tokyo|osaka|\\bjp\\b|🇯🇵"
@@ -664,10 +652,6 @@
     {
       "type": "selector",
       "tag": "美国",
-      "outbounds": [
-        "Proxy"
-      ],
-      "default": "Proxy",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
       "include": "(?i)美国|美國|美西|美东|洛杉矶|硅谷|西雅图|纽约|united[ _-]?states|america|los[ _-]?angeles|seattle|new[ _-]?york|\\bus\\b|\\busa\\b|🇺🇸"
@@ -675,10 +659,6 @@
     {
       "type": "selector",
       "tag": "新加坡",
-      "outbounds": [
-        "Proxy"
-      ],
-      "default": "Proxy",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
       "include": "(?i)新加坡|狮城|獅城|singapore|\\bsg\\b|🇸🇬"
@@ -686,10 +666,6 @@
     {
       "type": "selector",
       "tag": "其他地区",
-      "outbounds": [
-        "Proxy"
-      ],
-      "default": "Proxy",
       "interrupt_exist_connections": true,
       "use_all_providers": true,
       "exclude": "(?i)(?:香港|港|hong[ _-]?kong|\\bhk\\b|🇭🇰)|(?:台湾|台灣|台北|台中|taiwan|taipei|\\btw\\b|🇹🇼)|(?:日本|东京|東京|大阪|japan|tokyo|osaka|\\bjp\\b|🇯🇵)|(?:美国|美國|美西|美东|洛杉矶|硅谷|西雅图|纽约|united[ _-]?states|america|los[ _-]?angeles|seattle|new[ _-]?york|\\bus\\b|\\busa\\b|🇺🇸)|(?:新加坡|狮城|獅城|singapore|\\bsg\\b|🇸🇬)"
@@ -697,10 +673,6 @@
     {
       "type": "selector",
       "tag": "All Proxies",
-      "outbounds": [
-        "Proxy"
-      ],
-      "default": "Proxy",
       "interrupt_exist_connections": true,
       "use_all_providers": true
     }
