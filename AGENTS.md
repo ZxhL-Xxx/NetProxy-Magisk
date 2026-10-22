@@ -188,7 +188,8 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 - 涉及多个文件或层级、包含多个行为变化，或单一主题但改动量、运行时影响或回滚风险较大的提交，必须写 body；即使主题本身单一，也不能只留下标题。body 至少说明主要行为变化、影响范围和验证结果，必要时补充触发条件、实现取舍、迁移约束或已知影响。
 - body 只写 diff 里看不出来的信息，不要逐文件复述改了什么；真正微小且标题已经完整表达意图的提交才可以省略 body。
 - 改动 `schema=1` JSON 字段、错误码或状态语义时，body 必须列出需要同步的调用方（Shell / Go / Android / WebUI / tests）。
-- 除非用户在当前请求中明确授权，不执行 `git add`、`git commit`、`git commit --amend`、`git rebase`、`git push`、发布或创建 PR。授权只在提出它的那一轮请求内有效，不延续到后续轮次。
+- 用户于 2026-10-22 长期授权：每次完成代码、配置或文档修改并执行适用验证后，默认执行 `git add` 和本地 `git commit` 保存本轮改动，无需重复询问；只读分析不创建空提交，当次明确要求不提交时除外。
+- `git commit --amend`、`git rebase`、`git push`、发布、创建 PR 或合并到 main 不属于上述本地提交授权，须另有用户明确授权。
 - 保留用户已有的未提交改动。不要用 `git reset --hard`、破坏性 checkout 或批量清理来整理工作区。
 - 历史中存在 `ci fix`、`格式化·` 这类不合规主题。它们是离群值，不作为格式先例；不要模仿，也不要为统一格式改写历史。
 - 新增长期有效的架构、契约、平台或发布约束时，同步更新本文件。
@@ -379,6 +380,8 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 - `inbound.json`：由 `config/inbound/inbound.json` 当前后端生成的唯一受管透明代理入站。
 
 主配置包含日志、实验特性/Clash API、DNS、用户入站、路由、HTTP Client 和 Service API。Android 的分区是 `config list` 返回的逻辑文档，不对应额外磁盘文件；完整编辑入口保留所有受核心支持的字段。运行时文件由 Go 生成并只读展示。
+
+本分支的 AGH RC1 配套预设使用 `127.0.0.2/.3 -> AGH:5591` 双通道，广告过滤及放行由 AGH 管理。国外 DoH 的固定地址通过「总模式」出站，未知 DNS 使用国外通道且不回退国内；节点引导解析独立。业务路由的 resolve 使用 DNS 规则并保留实际解析结果，不能改为仅匹配后再从 bootstrap 重复解析。Rule 模式中中国域名/IP 优先业务组，GoogleFCM/YouTube 优先 Google；保留显式 Rule 兜底，使保存其他默认模式后仍可切回 Rule。WebRTC 拒绝位于 Direct 之后、Proxy 与国内规则之前，不承诺覆盖入站绕过路径。启用的远程规则只引用 SagerNet，内置快照在 `.github/resources.json` 登记并校验；不用不存在的官方软件专属 IP 集替代域名分类。地区选择器必须有显式 `Proxy` 依赖及默认值，空地区不能落入核心的 Compatible 直连回退。
 
 `config read` 返回 `content` 和 `revision`；`config apply/validate --revision <值> <目标> <候选文件>` 检测并发修改。`singbox/dns` 等分区使用带顶层键的 JSON，空对象删除该字段；`singbox/config.json` 替换整份主配置。保存后的 revision 对应本次实际写入内容，不通过无锁重新读取生成。
 

@@ -33,11 +33,11 @@ def build(base, output, sevenzip):
         raise ValueError('Output already exists; choose a new output path')
     if sha(base.read_bytes()) != BASE_SHA:
         raise ValueError('Upstream release SHA-256 mismatch')
-    if run(['git', 'rev-parse', 'HEAD'], cwd=ROOT).decode().strip() != BASE_COMMIT:
-        raise ValueError('Native/Android base commit must be reviewed before repackaging')
-    changed = run(['git', 'status', '--porcelain', '--untracked-files=all', '--',
-                   'src/native', 'src/android', 'src/webui'], cwd=ROOT)
-    if changed.strip():
+    run(['git', 'merge-base', '--is-ancestor', BASE_COMMIT, 'HEAD'], cwd=ROOT)
+    protected = ['src/native', 'src/android', 'src/webui']
+    changed = run(['git', 'diff', '--name-only', BASE_COMMIT, '--', *protected], cwd=ROOT)
+    untracked = run(['git', 'ls-files', '--others', '--exclude-standard', '--', *protected], cwd=ROOT)
+    if changed.strip() or untracked.strip():
         raise ValueError('Native/Android/WebUI source changed: use the full CI build instead')
     with zipfile.ZipFile(base) as archive:
         for info in archive.infolist():
@@ -70,10 +70,12 @@ def build(base, output, sevenzip):
         shutil.copyfile(stage / 'config/inbound/inbound.json', preset / 'inbound.json')
         prop = stage / 'module.prop'
         prop.write_text('id=netproxy\nname=NetProxy (AGH RC1)\n'
-            'version=v8.6.1-agh-rc1.1\nversionCode=1089\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
+            'version=v8.6.1-agh-rc1.2\nversionCode=1090\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
             'description=Local AGH RC1 paired test; eBPF; ad filtering by AGH\n'
             'webuiIcon=webroot/netproxy/favicon.svg\n', encoding='utf-8', newline='\n')
-        manifest = {'profile': '20261022-rc1-netproxy.1', 'kind': 'local-test-overlay',
+        manifest = {'profile': '20261022-rc1-netproxy.2', 'kind': 'local-test-overlay',
+            'source_head': run(['git', 'rev-parse', 'HEAD'], cwd=ROOT).decode().strip(),
+            'resource_manifest_sha256': sha((ROOT / '.github/resources.json').read_bytes()),
             'base_commit': BASE_COMMIT, 'base_release': 'v8.6.1', 'base_archive_sha256': BASE_SHA,
             'base_url': 'https://github.com/Fanju6/NetProxy-Magisk/releases/tag/v8.6.1',
             'unchanged_binaries_sha256': hashes,

@@ -101,31 +101,31 @@
       },
       {
         "rule_set": [
-          "geosite/steam@cn",
-          "geosite/microsoft@cn",
-          "geosite/google@cn",
-          "geosite/apple-cn"
+          "geosite-steam@cn",
+          "geosite-apple@cn",
+          "geosite-microsoft@cn",
+          "geosite-google@cn",
+          "geosite-cn"
         ],
         "action": "route",
         "server": "dns-direct"
       },
       {
         "rule_set": [
-          "geosite/openai",
-          "geosite/steam",
-          "geosite/youtube",
-          "geosite/telegram",
-          "geosite/github",
-          "geosite/microsoft",
-          "geosite/google"
+          "geosite-steam",
+          "geosite-apple",
+          "geosite-microsoft",
+          "geosite-telegram",
+          "geosite-tiktok",
+          "geosite-youtube",
+          "geosite-google",
+          "geosite-googlefcm",
+          "geosite-openai",
+          "geosite-github",
+          "geosite-twitter"
         ],
         "action": "route",
         "server": "dns-proxy"
-      },
-      {
-        "rule_set": "geosite/cn",
-        "action": "route",
-        "server": "dns-direct"
       }
     ],
     "final": "dns-proxy",
@@ -155,26 +155,40 @@
       {
         "type": "remote",
         "tag": [
-          "geosite/openai",
-          "geosite/steam",
-          "geosite/youtube",
-          "geosite/telegram",
-          "geosite/github",
-          "geosite/microsoft",
-          "geosite/google",
-          "geosite/steam@cn",
-          "geosite/microsoft@cn",
-          "geosite/google@cn",
-          "geosite/apple-cn",
-          "geosite/cn",
-          "geosite/geolocation-!cn",
-          "geoip/cn",
-          "geoip/telegram"
+          "geosite-steam",
+          "geosite-apple",
+          "geosite-microsoft",
+          "geosite-telegram",
+          "geosite-tiktok",
+          "geosite-youtube",
+          "geosite-google",
+          "geosite-googlefcm",
+          "geosite-openai",
+          "geosite-github",
+          "geosite-twitter",
+          "geosite-steam@cn",
+          "geosite-apple@cn",
+          "geosite-microsoft@cn",
+          "geosite-google@cn",
+          "geosite-cn",
+          "geosite-geolocation-!cn",
+          "geosite-category-stun"
         ],
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/{tag}.srs",
         "update_interval": "24h",
-        "path": "./rules/remote/{tag}.srs",
+        "path": "./rules/remote/sagernet/{tag}.srs",
+        "http_client": "s-download"
+      },
+      {
+        "type": "remote",
+        "tag": [
+          "geoip-cn"
+        ],
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/{tag}.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/sagernet/{tag}.srs",
         "http_client": "s-download"
       }
     ],
@@ -185,7 +199,15 @@
         "outbound": "direct"
       },
       {
-        "action": "sniff"
+        "action": "sniff",
+        "sniffer": [
+          "http",
+          "tls",
+          "quic",
+          "dns",
+          "stun"
+        ],
+        "timeout": "300ms"
       },
       {
         "type": "logical",
@@ -207,7 +229,7 @@
         ],
         "port": 443,
         "action": "route",
-        "outbound": "Proxy"
+        "outbound": "总模式"
       },
       {
         "ip_cidr": [
@@ -221,14 +243,41 @@
         "outbound": "direct"
       },
       {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "protocol": "stun"
+          },
+          {
+            "rule_set": "geosite-category-stun"
+          },
+          {
+            "port": [
+              3478,
+              5349
+            ]
+          },
+          {
+            "port_range": [
+              "19302:19309"
+            ]
+          }
+        ],
+        "action": "reject"
+      },
+      {
+        "action": "resolve"
+      },
+      {
         "clash_mode": "Proxy",
         "action": "route",
-        "outbound": "Proxy"
+        "outbound": "总模式"
       },
       {
         "rule_set": "proxy",
         "action": "route",
-        "outbound": "Proxy"
+        "outbound": "总模式"
       },
       {
         "rule_set": "direct",
@@ -237,81 +286,12 @@
       },
       {
         "rule_set": [
-          "geosite/steam@cn",
-          "geosite/microsoft@cn",
-          "geosite/google@cn",
-          "geosite/apple-cn"
+          "geosite-steam@cn",
+          "geosite-apple@cn",
+          "geosite-microsoft@cn",
+          "geosite-google@cn",
+          "geosite-cn"
         ],
-        "action": "route",
-        "outbound": "direct"
-      },
-      {
-        "rule_set": [
-          "geosite/openai"
-        ],
-        "action": "route",
-        "outbound": "OpenAI"
-      },
-      {
-        "rule_set": [
-          "geosite/steam"
-        ],
-        "action": "route",
-        "outbound": "Steam"
-      },
-      {
-        "rule_set": [
-          "geosite/youtube"
-        ],
-        "action": "route",
-        "outbound": "YouTube"
-      },
-      {
-        "rule_set": [
-          "geosite/telegram",
-          "geoip/telegram"
-        ],
-        "action": "route",
-        "outbound": "Telegram"
-      },
-      {
-        "rule_set": [
-          "geosite/github"
-        ],
-        "action": "route",
-        "outbound": "GitHub"
-      },
-      {
-        "rule_set": [
-          "geosite/microsoft"
-        ],
-        "action": "route",
-        "outbound": "Microsoft"
-      },
-      {
-        "rule_set": [
-          "geosite/google"
-        ],
-        "action": "route",
-        "outbound": "Google"
-      },
-      {
-        "rule_set": "geosite/cn",
-        "action": "route",
-        "outbound": "direct"
-      },
-      {
-        "rule_set": "geosite/geolocation-!cn",
-        "action": "route",
-        "outbound": "Proxy"
-      },
-      {
-        "action": "resolve",
-        "match_only": true,
-        "server": "dns-proxy"
-      },
-      {
-        "rule_set": "geoip/cn",
         "action": "route",
         "outbound": "direct"
       },
@@ -319,11 +299,103 @@
         "ip_is_private": true,
         "action": "route",
         "outbound": "direct"
+      },
+      {
+        "rule_set": "geoip-cn",
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "geosite-googlefcm"
+        ],
+        "action": "route",
+        "outbound": "GoogleFCM"
+      },
+      {
+        "rule_set": [
+          "geosite-youtube"
+        ],
+        "action": "route",
+        "outbound": "YouTube"
+      },
+      {
+        "rule_set": [
+          "geosite-google"
+        ],
+        "action": "route",
+        "outbound": "Google"
+      },
+      {
+        "rule_set": [
+          "geosite-steam"
+        ],
+        "action": "route",
+        "outbound": "Steam"
+      },
+      {
+        "rule_set": [
+          "geosite-github"
+        ],
+        "action": "route",
+        "outbound": "GitHub"
+      },
+      {
+        "rule_set": [
+          "geosite-tiktok"
+        ],
+        "action": "route",
+        "outbound": "TikTok"
+      },
+      {
+        "rule_set": [
+          "geosite-twitter"
+        ],
+        "action": "route",
+        "outbound": "Twitter(X)"
+      },
+      {
+        "rule_set": [
+          "geosite-openai"
+        ],
+        "action": "route",
+        "outbound": "OpenAI"
+      },
+      {
+        "rule_set": [
+          "geosite-apple"
+        ],
+        "action": "route",
+        "outbound": "Apple"
+      },
+      {
+        "rule_set": [
+          "geosite-microsoft"
+        ],
+        "action": "route",
+        "outbound": "Microsoft"
+      },
+      {
+        "rule_set": [
+          "geosite-telegram"
+        ],
+        "action": "route",
+        "outbound": "Telegram"
+      },
+      {
+        "rule_set": "geosite-geolocation-!cn",
+        "action": "route",
+        "outbound": "总模式"
+      },
+      {
+        "clash_mode": "Rule",
+        "action": "route",
+        "outbound": "漏网之鱼"
       }
     ],
     "find_process": true,
     "auto_detect_interface": true,
-    "final": "Proxy"
+    "final": "漏网之鱼"
   },
   "outbounds": [
     {
@@ -338,21 +410,16 @@
     },
     {
       "type": "selector",
-      "tag": "All Proxies",
-      "outbounds": [
-        "Proxy"
-      ],
-      "default": "Proxy",
-      "use_all_providers": true,
-      "interrupt_exist_connections": true
-    },
-    {
-      "type": "selector",
-      "tag": "OpenAI",
+      "tag": "总模式",
       "outbounds": [
         "Proxy",
-        "All Proxies",
-        "direct"
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies"
       ],
       "default": "Proxy",
       "interrupt_exist_connections": true
@@ -361,67 +428,281 @@
       "type": "selector",
       "tag": "Steam",
       "outbounds": [
-        "Proxy",
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
         "All Proxies",
         "direct"
       ],
-      "default": "Proxy",
+      "default": "总模式",
       "interrupt_exist_connections": true
     },
     {
       "type": "selector",
-      "tag": "YouTube",
+      "tag": "Apple",
       "outbounds": [
-        "Proxy",
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
         "All Proxies",
         "direct"
       ],
-      "default": "Proxy",
-      "interrupt_exist_connections": true
-    },
-    {
-      "type": "selector",
-      "tag": "Telegram",
-      "outbounds": [
-        "Proxy",
-        "All Proxies",
-        "direct"
-      ],
-      "default": "Proxy",
-      "interrupt_exist_connections": true
-    },
-    {
-      "type": "selector",
-      "tag": "GitHub",
-      "outbounds": [
-        "Proxy",
-        "All Proxies",
-        "direct"
-      ],
-      "default": "Proxy",
+      "default": "总模式",
       "interrupt_exist_connections": true
     },
     {
       "type": "selector",
       "tag": "Microsoft",
       "outbounds": [
-        "Proxy",
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
         "All Proxies",
         "direct"
       ],
-      "default": "Proxy",
+      "default": "总模式",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Telegram",
+      "outbounds": [
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "总模式",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "TikTok",
+      "outbounds": [
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "总模式",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "YouTube",
+      "outbounds": [
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "总模式",
       "interrupt_exist_connections": true
     },
     {
       "type": "selector",
       "tag": "Google",
       "outbounds": [
-        "Proxy",
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
         "All Proxies",
         "direct"
       ],
-      "default": "Proxy",
+      "default": "总模式",
       "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "GoogleFCM",
+      "outbounds": [
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "总模式",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "OpenAI",
+      "outbounds": [
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "总模式",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "GitHub",
+      "outbounds": [
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "总模式",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Twitter(X)",
+      "outbounds": [
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "总模式",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "漏网之鱼",
+      "outbounds": [
+        "总模式",
+        "香港",
+        "台湾",
+        "日本",
+        "美国",
+        "新加坡",
+        "其他地区",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "总模式",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "香港",
+      "outbounds": [
+        "Proxy"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true,
+      "use_all_providers": true,
+      "include": "(?i)香港|港|hong[ _-]?kong|\\bhk\\b|🇭🇰"
+    },
+    {
+      "type": "selector",
+      "tag": "台湾",
+      "outbounds": [
+        "Proxy"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true,
+      "use_all_providers": true,
+      "include": "(?i)台湾|台灣|台北|台中|taiwan|taipei|\\btw\\b|🇹🇼"
+    },
+    {
+      "type": "selector",
+      "tag": "日本",
+      "outbounds": [
+        "Proxy"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true,
+      "use_all_providers": true,
+      "include": "(?i)日本|东京|東京|大阪|japan|tokyo|osaka|\\bjp\\b|🇯🇵"
+    },
+    {
+      "type": "selector",
+      "tag": "美国",
+      "outbounds": [
+        "Proxy"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true,
+      "use_all_providers": true,
+      "include": "(?i)美国|美國|美西|美东|洛杉矶|硅谷|西雅图|纽约|united[ _-]?states|america|los[ _-]?angeles|seattle|new[ _-]?york|\\bus\\b|\\busa\\b|🇺🇸"
+    },
+    {
+      "type": "selector",
+      "tag": "新加坡",
+      "outbounds": [
+        "Proxy"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true,
+      "use_all_providers": true,
+      "include": "(?i)新加坡|狮城|獅城|singapore|\\bsg\\b|🇸🇬"
+    },
+    {
+      "type": "selector",
+      "tag": "其他地区",
+      "outbounds": [
+        "Proxy"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true,
+      "use_all_providers": true,
+      "exclude": "(?i)(?:香港|港|hong[ _-]?kong|\\bhk\\b|🇭🇰)|(?:台湾|台灣|台北|台中|taiwan|taipei|\\btw\\b|🇹🇼)|(?:日本|东京|東京|大阪|japan|tokyo|osaka|\\bjp\\b|🇯🇵)|(?:美国|美國|美西|美东|洛杉矶|硅谷|西雅图|纽约|united[ _-]?states|america|los[ _-]?angeles|seattle|new[ _-]?york|\\bus\\b|\\busa\\b|🇺🇸)|(?:新加坡|狮城|獅城|singapore|\\bsg\\b|🇸🇬)"
+    },
+    {
+      "type": "selector",
+      "tag": "All Proxies",
+      "outbounds": [
+        "Proxy"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true,
+      "use_all_providers": true
     }
   ]
 }

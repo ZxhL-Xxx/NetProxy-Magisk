@@ -30,6 +30,7 @@ class Upstream(threading.Thread):
     def __init__(self, suffix):
         super().__init__(daemon=True)
         self.suffix, self.questions, self.stopped = suffix, [], threading.Event()
+        self.answers = {}
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("127.0.0.1", 0))
         self.sock.settimeout(0.2)
@@ -49,7 +50,7 @@ class Upstream(threading.Thread):
             end += 5
             self.questions.append(".".join(labels))
             qtype = struct.unpack_from("!H", data, end - 4)[0]
-            answer = socket.inet_pton(socket.AF_INET6, f"2001:db8::{self.suffix}") if qtype == 28 else socket.inet_aton(f"198.51.100.{self.suffix}")
+            answer = socket.inet_pton(socket.AF_INET6, f"2001:db8::{self.suffix}") if qtype == 28 else socket.inet_aton(self.answers.get('.'.join(labels), f"198.51.100.{self.suffix}"))
             response = data[:2] + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0) + data[12:end]
             response += b"\xc0\x0c" + struct.pack("!HHIH", qtype, 1, 60, len(answer)) + answer
             self.sock.sendto(response, address)
@@ -87,9 +88,84 @@ def query(port, host, source="127.0.0.1", qtype=1, tcp=False):
     return rcode, address
 
 
-def api(port, path):
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=2) as response:
+def api(port, path, body=None, method=None):
+    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}",
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={'Authorization': 'Bearer singbox', 'Content-Type': 'application/json'},
+        method=method or ('PUT' if body is not None else 'GET'))
+    with urllib.request.urlopen(request, timeout=2) as response:
+        if response.status == 204:
+            return None
         return json.load(response)
+
+
+def receive(sock, length):
+    data = b''
+    while len(data) < length:
+        part = sock.recv(length - len(data))
+        if not part:
+            raise RuntimeError('SOCKS fixture closed early')
+        data += part
+    return data
+
+
+class SocksSpy(threading.Thread):
+    """A local SOCKS destination recorder; never connects to requested Internet hosts."""
+    def __init__(self, label, observed):
+        super().__init__(daemon=True)
+        self.label, self.observed, self.stopped = label, observed, threading.Event()
+        self.sock = socket.socket()
+        self.sock.bind(('127.0.0.1', 0))
+        self.port = self.sock.getsockname()[1]
+        self.sock.listen()
+        self.sock.settimeout(0.2)
+
+    def run(self):
+        while not self.stopped.is_set():
+            try:
+                conn, _ = self.sock.accept()
+            except socket.timeout:
+                continue
+            with conn:
+                conn.settimeout(3)
+                version, count = receive(conn, 2)
+                assert version == 5
+                receive(conn, count)
+                conn.sendall(b'\x05\x00')
+                version, command, _, kind = receive(conn, 4)
+                assert (version, command) == (5, 1)
+                if kind == 3:
+                    destination = receive(conn, receive(conn, 1)[0]).decode()
+                else:
+                    destination = str(ipaddress.ip_address(receive(conn, 4 if kind == 1 else 16)))
+                port = int.from_bytes(receive(conn, 2), 'big')
+                self.observed.append((self.label, destination, port))
+                conn.sendall(b'\x05\x00\x00\x01\x7f\x00\x00\x01\x00\x00')
+                conn.recv(4096)
+                conn.sendall(b'HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n')
+
+    def close(self):
+        self.stopped.set()
+        self.join(timeout=4)
+        self.sock.close()
+
+
+def connect_via_socks(port, host, destination_port=80):
+    with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+        sock.sendall(b'\x05\x01\x00')
+        assert receive(sock, 2) == b'\x05\x00'
+        try:
+            address = ipaddress.ip_address(host)
+            target = bytes([1 if address.version == 4 else 4]) + address.packed
+        except ValueError:
+            target = bytes([3, len(host)]) + host.encode()
+        sock.sendall(b'\x05\x01\x00' + target + destination_port.to_bytes(2, 'big'))
+        response = receive(sock, 4)
+        assert response[:2] == b'\x05\x00', response
+        size = 4 if response[3] == 1 else 16 if response[3] == 4 else receive(sock, 1)[0]
+        receive(sock, size + 2)
+        sock.sendall(f'GET / HTTP/1.1\r\nHost: {host}\r\n\r\n'.encode())
+        assert b'204 No Content' in sock.recv(4096)
 
 
 def start(executable, arguments, work, log_name):
@@ -110,7 +186,8 @@ def main():
     work = Path(tempfile.mkdtemp(prefix="agh-wire-", dir=base)).resolve()
     assert work.parent == base.resolve()
     upstreams = [Upstream(11), Upstream(22), Upstream(33)]
-    processes, logs, results = [], [], []
+    processes, logs, results, spies, observed = [], [], [], [], []
+    udp_sink = None
     try:
         for upstream in upstreams:
             upstream.start()
@@ -173,7 +250,8 @@ def main():
             results.append({"source": source, "tcp": True, "answer": actual})
         sb = json.loads((ROOT / "src/module/config/singbox/config.json").read_text(encoding="utf-8"))
         sb["experimental"]["cache_file"]["path"] = (work / "cache.db").as_posix()
-        sb["experimental"]["clash_api"]["external_controller"] = f"127.0.0.1:{free_port()}"
+        clash_port, mixed_port, udp_port = free_port(), free_port(), free_port()
+        sb["experimental"]["clash_api"]["external_controller"] = f"127.0.0.1:{clash_port}"
         sb["services"][0]["listen_port"] = free_port()
         sb["services"][0].pop("dashboard", None)
         for server in sb["dns"]["servers"]:
@@ -181,6 +259,19 @@ def main():
                 server["server_port"] = agh_port
         sb["inbounds"] = [{"type": "direct", "tag": "dns-test", "listen": "127.0.0.1", "listen_port": dns_port,
                            "override_address": "198.51.100.53", "override_port": 53}]
+        # Only temporary loopback listeners and mock upstreams; no OS routing changes.
+        udp_sink = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp_sink.bind(('127.0.0.1', 0))
+        udp_sink.settimeout(0.7)
+        sb['inbounds'].extend([
+            {'type': 'mixed', 'tag': 'route-test', 'listen': '127.0.0.1', 'listen_port': mixed_port},
+            {'type': 'direct', 'tag': 'stun-test', 'listen': '127.0.0.1', 'listen_port': udp_port,
+             'override_address': '127.0.0.1', 'override_port': udp_sink.getsockname()[1]},
+        ])
+        reject_index = next(i for i, r in enumerate(sb['route']['rules']) if r['action'] == 'reject')
+        sb['route']['rules'].insert(reject_index + 1,
+            {'inbound': 'stun-test', 'action': 'route', 'outbound': 'fixture-udp'})
+        sb['outbounds'].append({'type': 'direct', 'tag': 'fixture-udp'})
         for rule in sb["route"]["rule_set"]:
             for tag in rule["tag"]:
                 source = ROOT / "src/module/config/singbox" / rule["path"].replace("{tag}", tag)
@@ -191,7 +282,25 @@ def main():
             if rule["type"] == "remote":
                 rule["url"] = "http://127.0.0.1:9/{tag}.srs"
         sb["providers"] = [{"type": "local", "tag": "fixture", "path": (work / "provider.json").as_posix()}]
-        sb["outbounds"].extend([{"type": "direct", "tag": "direct"}, {"type": "direct", "tag": "Proxy"}])
+        business_hosts = {
+            'Steam': 'steamcommunity.com', 'Apple': 'icloud.com', 'Microsoft': 'onedrive.live.com',
+            'Telegram': 'telegram.org', 'TikTok': 'tiktok.com', 'YouTube': 'www.youtube.com',
+            'Google': 'google.com', 'GoogleFCM': 'mtalk.google.com', 'OpenAI': 'api.openai.com',
+            'GitHub': 'github.com', 'Twitter(X)': 'x.com',
+        }
+        for label in ['direct', 'Proxy', *business_hosts, '漏网之鱼']:
+            spy = SocksSpy(label, observed)
+            spy.start()
+            spies.append(spy)
+            tag = label if label in ('direct', 'Proxy') else 'fixture-' + label
+            sb['outbounds'].append({'type': 'socks', 'tag': tag, 'server': '127.0.0.1', 'server_port': spy.port})
+            if label not in ('direct', 'Proxy'):
+                group = next(o for o in sb['outbounds'] if o['tag'] == label)
+                group['outbounds'].append(tag)
+                group['default'] = tag
+        # Detect accidental use of the bootstrap resolver during business resolution.
+        sb['dns']['servers'].append({'type': 'udp', 'tag': 'fixture-bootstrap', 'server': '127.0.0.1', 'server_port': upstreams[2].port})
+        next(s for s in sb['dns']['servers'] if s['tag'] == 'dns-bootstrap')['servers'] = ['fixture-bootstrap']
         (work / "provider.json").write_text(json.dumps({"outbounds": [{"type": "socks", "tag": "fixture-node", "server": "127.0.0.1", "server_port": 9}]}), encoding="utf-8")
         path = work / "sing-box.json"
         path.write_text(json.dumps(sb), encoding="utf-8")
@@ -201,8 +310,7 @@ def main():
         time.sleep(1)
         if process.poll() is not None:
             raise RuntimeError("sing-box exited; see " + str(work / "sing-box.log"))
-        for host, suffix in (("api.openai.com", 11), ("steamcommunity.com", 11), ("www.youtube.com", 11),
-                             ("telegram.org", 11), ("github.com", 11), ("onedrive.live.com", 11), ("google.com", 11),
+        for host, suffix in (*[(h, 11) for h in business_hosts.values()],
                              ("www.baidu.com", 22), ("steamchina.com", 22), ("download.microsoft.com", 22),
                              ("dl.google.com", 22), ("fixture-unknown.example", 11)):
             actual = query(dns_port, host)
@@ -215,6 +323,62 @@ def main():
             actual = query(dns_port, "fixture-block.example", qtype=qtype)
             assert actual == (0, expected), actual
             results.append({"through": "sing-box", "blocked_qtype": qtype, "answer": actual})
+        groups = api(clash_port, '/proxies')['proxies']
+        for region in ['香港', '台湾', '日本', '美国', '新加坡', '其他地区', 'All Proxies']:
+            assert groups[region]['now'] == 'Proxy', (region, groups[region])
+            if region not in ('其他地区', 'All Proxies'):
+                assert groups[region]['all'] == ['Proxy'], (region, groups[region])
+            else:
+                assert any(n.endswith('/fixture-node') for n in groups[region]['all']), (region, groups[region])
+            results.append({'region_default': region, 'selected': 'Proxy'})
+        for label, host in business_hosts.items():
+            before = len(observed)
+            connect_via_socks(mixed_port, host)
+            assert len(observed) == before + 1 and observed[-1][0] == label, (host, observed[before:])
+            assert observed[-1][1] == '198.51.100.11', observed[-1]
+            results.append({'business_route': host, 'outbound': label, 'destination': observed[-1][1]})
+        upstreams[0].answers['cn-ip.openai.com'] = '114.114.114.114'
+        for host, expected in [('cn-ip.openai.com', 'direct'), ('www.baidu.com', 'direct'),
+                               ('download.microsoft.com', 'direct'), ('114.114.114.114', 'direct'),
+                               ('203.0.113.5', '漏网之鱼'), ('route-final-fixture.example', '漏网之鱼'),
+                               ('1.1.1.1', 'Proxy'), ('223.5.5.5', 'direct')]:
+            connect_via_socks(mixed_port, host, 443 if host in ('1.1.1.1', '223.5.5.5') else 80)
+            assert observed[-1][0] == expected, (host, observed[-1])
+            results.append({'priority_route': host, 'outbound': expected, 'destination': observed[-1][1]})
+        assert not upstreams[2].questions, upstreams[2].questions
+        results.append({'business_lookup_never_uses_bootstrap': True})
+        # A valid STUN Binding request on a nonstandard port must be rejected;
+        # an unrelated UDP payload must still reach the very same local sink.
+        stun = struct.pack('!HHI', 1, 0, 0x2112A442) + b'fixture-stun'
+        assert len(stun) == 20
+        for mode in ['Rule', 'Proxy']:
+            api(clash_port, '/configs', {'mode': mode}, method='PATCH')
+            assert api(clash_port, '/configs')['mode'] == mode
+            for host, destination_port in [('203.0.113.9', 3478), ('stun.l.google.com', 443)]:
+                before = len(observed)
+                try:
+                    connect_via_socks(mixed_port, host, destination_port)
+                except (AssertionError, OSError, RuntimeError):
+                    pass
+                else:
+                    raise AssertionError(('WebRTC TCP unexpectedly allowed', mode, host, destination_port))
+                assert len(observed) == before, observed[before:]
+                results.append({'mode': mode, 'webrtc_rejected': host, 'port': destination_port})
+            for payload, blocked in [(stun, True), (b'ordinary-udp-fixture', False)]:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                    sock.sendto(payload, ('127.0.0.1', udp_port))
+                    try:
+                        actual, _ = udp_sink.recvfrom(4096)
+                    except socket.timeout:
+                        actual = None
+                assert (actual is None) if blocked else actual == payload, (mode, blocked, actual)
+                results.append({'mode': mode, 'stun_blocked' if blocked else 'ordinary_udp_forwarded': True})
+        api(clash_port, '/configs', {'mode': 'Direct'}, method='PATCH')
+        assert api(clash_port, '/configs')['mode'] == 'Direct'
+        connect_via_socks(mixed_port, '203.0.113.9', 3478)
+        assert observed[-1][0] == 'direct', observed[-1]
+        results.append({'Direct_mode_precedes_webrtc_reject': True})
+        api(clash_port, '/configs', {'mode': 'Rule'}, method='PATCH')
         upstreams[0].close()
         actual = query(dns_port, "failed-proxy-path.example")
         assert actual[0] != 0, actual
@@ -231,6 +395,8 @@ def main():
         (work / "validation.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({key: value for key, value in report.items() if key != "checks"}, ensure_ascii=False))
     finally:
+        if udp_sink is not None:
+            udp_sink.close()
         for process in reversed(processes):
             if process.poll() is None:
                 process.terminate()
@@ -244,6 +410,8 @@ def main():
         for upstream in upstreams:
             if not upstream.stopped.is_set():
                 upstream.close()
+        for spy in spies:
+            spy.close()
 
 
 if __name__ == "__main__":

@@ -20,44 +20,17 @@ test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类�
   })
 })
 
-test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 响应匹配差异', () => {
-  const expected = structuredClone(upstream)
-  expected.log.output = 'stderr'
-  expected.experimental.cache_file.path = '/data/adb/modules/netproxy/config/singbox/cache.db'
-  expected.experimental.clash_api.external_controller = '127.0.0.1:9999'
-  delete expected.experimental.clash_api.external_ui
-  delete expected.experimental.clash_api.external_ui_download_url
-  expected.services[0].listen = '127.0.0.1'
-  expected.services[0].listen_port = 9090
-  expected.services[0].dashboard.path = '/data/adb/modules/netproxy/webroot/sing-box-dashboard'
-  expected.inbounds = expected.inbounds.filter(inbound => inbound.type !== 'ebpf')
-  expected.inbounds[0].listen = '127.0.0.1'
-  delete expected.outbounds
-  delete expected.providers
-  for (const rule of expected.route.rule_set) {
-    rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
-  }
-  const renameModes = rules => {
-    for (const rule of rules) {
-      if (rule.clash_mode === 'Global') rule.clash_mode = 'Proxy'
-      if (rule.clash_mode === 'AllowAds') rule.clash_mode = 'RuleAllowAds'
-      if (rule.rules) renameModes(rule.rules)
-    }
-  }
-  renameModes(expected.dns.rules)
-  renameModes(expected.route.rules)
-  const matchLocalResponses = rules => {
-    for (const rule of rules) {
-      if (list(rule.rule_set).some(tag => ['proxy', 'direct', 'block'].includes(tag))) rule.match_response = true
-      if (rule.rules) matchLocalResponses(rule.rules)
-    }
-  }
-  matchLocalResponses(expected.dns.rules)
-  expected.dns.rules.splice(2, 0, { action: 'evaluate', server: 'dns-proxy' })
-  expected.route.rules.push({ clash_mode: 'Rule', action: 'route', outbound: expected.route.final })
-  const directIndex = expected.route.rules.findIndex(rule => rule.clash_mode === 'Direct')
-  expected.route.rules.unshift(...expected.route.rules.splice(directIndex, 1))
-  assert.deepEqual(config, expected)
+test('AGH 配套配置保留部署地址和运行时出站边界', () => {
+  assert.equal(config.log.output, 'stderr')
+  assert.equal(config.experimental.cache_file.path, '/data/adb/modules/netproxy/config/singbox/cache.db')
+  assert.equal(config.experimental.clash_api.external_controller, '127.0.0.1:9999')
+  assert.equal(config.experimental.clash_api.secret, upstream.experimental.clash_api.secret)
+  assert.equal(config.services[0].listen, '127.0.0.1')
+  assert.equal(config.services[0].listen_port, 9090)
+  assert.equal(config.services[0].dashboard.path, '/data/adb/modules/netproxy/webroot/sing-box-dashboard')
+  assert.equal(config.providers, undefined)
+  assert(!config.outbounds.some(o => ['Proxy', 'direct', 'block'].includes(o.tag)))
+  assert(config.outbounds.filter(o => o.tag.startsWith('agh-')).every(o => o.type === 'direct'))
 })
 
 test('默认规则显式提供 Rule，保存其他默认模式后仍可切回', () => {
@@ -66,7 +39,7 @@ test('默认规则显式提供 Rule，保存其他默认模式后仍可切回', 
   assert.equal(config.experimental.clash_api.default_mode, 'Rule')
   const modes = rules => rules.flatMap(rule => [...list(rule.clash_mode), ...modes(rule.rules ?? [])])
   assert.deepEqual([...new Set([...modes(config.route.rules), ...modes(config.dns.rules)])].sort(),
-    ['Direct', 'Proxy', 'Rule', 'RuleAllowAds'])
+    ['Direct', 'Proxy', 'Rule'])
 })
 
 test('默认远程规则有对应的内置文件与更新来源', () => {
@@ -86,12 +59,11 @@ test('默认远程规则有对应的内置文件与更新来源', () => {
   }
 })
 
-test('eBPF 默认绕过引用与上游和静态规则一致', () => {
+test('AGH 配套 eBPF 不在内核提前绕过中国 IP', () => {
   const localBypass = managed.ebpf.local.bypass_rule_set
   const sharedBypass = managed.ebpf.shared.bypass_rule_set
-  const inbound = upstream.inbounds.find(inbound => inbound.type === 'ebpf')
-  assert.deepEqual(localBypass, inbound.local.bypass_rule_set)
-  assert.deepEqual(sharedBypass, inbound.shared.bypass_rule_set)
+  assert.deepEqual(localBypass, [])
+  assert.deepEqual(sharedBypass, [])
   assert.equal(Object.hasOwn(managed.ebpf, 'bypass_rule_set'), false)
   const tags = config.route.rule_set.flatMap(rule => list(rule.tag))
   for (const tag of [...localBypass, ...sharedBypass]) assert.ok(tags.includes(tag), `${tag} 未在静态配置声明`)
@@ -105,12 +77,12 @@ test('单一入站默认保留 eBPF 原生语义和禁用共享路径偏好', ()
   assert.deepEqual(managed.ebpf, {
     type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
     local: {
-      enabled: true, data_plane: 'cgroup', dns_mode: 'respect_policy', ipv6: true,
-      bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
+      enabled: true, data_plane: 'cgroup', dns_mode: 'hijack', ipv6: true,
+      bypass_private_address: true, bypass_rule_set: [],
     },
     shared: {
       enabled: false, data_plane: 'packet_rewrite', dns_mode: 'hijack', interface: ['wlan2'],
-      ipv6: true, bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
+      ipv6: true, bypass_private_address: true, bypass_rule_set: [],
     },
   })
 })
