@@ -45,6 +45,7 @@
 - 出站模式的唯一持久事实源是主配置 `experimental.clash_api.default_mode`；可选列表复用内核 `clashmode.CalculateModeList` 并包含默认模式，使用原生名称，不保留模块字段或固定四模式映射。`service status.outbound_mode` 表示实际模式，`configured_outbound_mode` 表示默认模式，`available_outbound_modes` 表示配置中的模式列表。停止时显示默认模式；运行中 API 不可用时显示 `unknown`。Wi-Fi 策略只修改运行时，不覆盖默认模式。
 - 模式保存与网络策略应用按生命周期锁、配置文件锁顺序串行执行；仅有效入站 DNS 参数变化才原位重载，参数不变时通过 API 切换并回读确认。API 失败不得重载兜底，已保存默认模式保留并返回 `mode.runtime_sync_failed`。Direct 必须先于 DNS 劫持路由；运行时将启用的 eBPF 路径 DNS 设为 off、TUN 设为 disabled，不改保存的偏好。启动/重载冻结同一策略生成入站并校准缓存模式，避免启动后再次重载；已开始的重载有界收尾，不被新网络事件取消。
 - Wi-Fi 策略在 `module.json` 的 `wifi` 对象中分别保存 `enabled` 开关与 `mode=blacklist/whitelist` 模式、独立字符串数组 `blacklist/whitelist` 和 `proxy_on_non_wifi` 开关；界面三态由开关与模式派生，关闭不得清空名单或改写模式。SSID 精确保留空格、大小写和逗号，不读取旧名单字段或将 mode=off 转换为开关。只在策略开启时监听 route/link/address 和 nl80211 事件，按实际出口 station 读取 SSID，不回退到 cmd/dumpsys 文本猜测或定时轮询。未知网络不能当作非 Wi-Fi；开机未知时校准默认模式。只读 `network wifi-list` 经 Go 有界查询已保存名称，不返回密码，不进入遥测，名单落日志与诊断前必须脱敏。
+- Wi-Fi 策略采集或应用失败后按 1–30 秒退避重读最新网络；新事件优先，成功即停止重试，不能假设失败后必有另一条网络事件。普通 Wi-Fi/流量切换不直接改变 AGH DNS 归属，也不额外重启核心或 AGH；仅已确认的策略、DNS 参数和生命周期变化进入现有交接流程。
 
 ## 命令入口与脚本布局
 

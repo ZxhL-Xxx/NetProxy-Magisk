@@ -307,6 +307,107 @@ func TestNetworkWatcherSkipsEvaluationWhenStateReadFails(t *testing.T) {
 	}
 }
 
+func TestNetworkWatcherRecoversWithoutAnotherEventAndStopsRetrying(t *testing.T) {
+	for _, stage := range []string{"read", "apply"} {
+		t.Run(stage, func(t *testing.T) {
+			var mu sync.Mutex
+			reads, applies := 0, 0
+			recovered := make(chan struct{}, 4)
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				runNetworkWatcher(ctx, Options{
+					NetworkEventSource: channelNetworkEventSource(nil),
+					NetworkStateReader: func(context.Context) (NetworkState, error) {
+						mu.Lock()
+						defer mu.Unlock()
+						reads++
+						if stage == "read" && reads == 1 {
+							return NetworkState{}, ErrNetworkUnavailable
+						}
+						return NetworkState{NetworkType: "not_wifi", ActiveInterface: "rmnet0"}, nil
+					},
+					NetworkEvaluate: func(context.Context, string, string) error {
+						mu.Lock()
+						defer mu.Unlock()
+						applies++
+						if stage == "apply" && applies == 1 {
+							return errors.New("control API temporarily unavailable")
+						}
+						recovered <- struct{}{}
+						return nil
+					},
+				}, log.New(io.Discard, "", 0))
+			}()
+			t.Cleanup(func() { cancel(); <-done })
+			select {
+			case <-recovered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("暂时失败后没有在无新事件时重试恢复")
+			}
+			// 超过下一次退避间隔，确认恢复后没有留下采样或应用策略的定时轮询。
+			time.Sleep(2200 * time.Millisecond)
+			mu.Lock()
+			gotReads, gotApplies := reads, applies
+			mu.Unlock()
+			wantApplies := 1
+			if stage == "apply" {
+				wantApplies = 2
+			}
+			if gotReads != 2 || gotApplies != wantApplies {
+				t.Fatalf("恢复后仍重复读取或应用策略: reads=%d applies=%d", gotReads, gotApplies)
+			}
+		})
+	}
+}
+
+func TestNetworkWatcherNewEventPreemptsFailureBackoff(t *testing.T) {
+	events := make(chan struct{}, 1)
+	attempts := make(chan string, 4)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	var mu sync.Mutex
+	state := NetworkState{NetworkType: "wifi", SSID: "Home", ActiveInterface: "wlan0"}
+	go func() {
+		defer close(done)
+		runNetworkWatcher(ctx, Options{
+			NetworkEventSource:      channelNetworkEventSource(events),
+			NetworkDebounceInterval: 5 * time.Millisecond,
+			NetworkStateReader: func(context.Context) (NetworkState, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				return state, nil
+			},
+			NetworkEvaluate: func(_ context.Context, _, ssid string) error {
+				attempts <- ssid
+				if ssid != "" {
+					return errors.New("temporary policy failure")
+				}
+				return nil
+			},
+		}, log.New(io.Discard, "", 0))
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+	select {
+	case <-attempts:
+	case <-time.After(time.Second):
+		t.Fatal("初始策略未执行")
+	}
+	mu.Lock()
+	state = NetworkState{NetworkType: "not_wifi", ActiveInterface: "rmnet0"}
+	mu.Unlock()
+	events <- struct{}{}
+	select {
+	case ssid := <-attempts:
+		if ssid != "" {
+			t.Fatalf("重试未读取最新网络: %q", ssid)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("新网络事件被旧失败的退避计时器阻塞")
+	}
+}
+
 func channelNetworkEventSource(events <-chan struct{}) NetworkEventSource {
 	return func(ctx context.Context, notify func()) error {
 		for {

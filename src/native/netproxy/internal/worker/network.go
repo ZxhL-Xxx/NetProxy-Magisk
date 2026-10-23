@@ -113,6 +113,7 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 	pending := false
 	var lastEvaluatedState NetworkState
 	haveEvaluatedState := false
+	retry := time.Second
 	var repeatedError repeatedNetworkError
 	var debounceTimer *time.Timer
 	var debounce <-chan time.Time
@@ -183,6 +184,16 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 			} else if result.readErr == nil && !result.skipped {
 				lastEvaluatedState = result.state
 				haveEvaluatedState = true
+			}
+			if result.readErr != nil || result.evaluateErr != nil {
+				// 切网的最后一条事件可能早于路由或 API 就绪，失败后不能只等下一条事件。
+				// 已排队的新事件优先；成功后不再启动重试，正常空闲仍只等待事件。
+				if !pending && debounce == nil {
+					scheduleEvaluation(retry)
+				}
+				retry = min(retry*2, networkEventRetryInterval)
+			} else {
+				retry = time.Second
 			}
 			if pending {
 				startEvaluation()
