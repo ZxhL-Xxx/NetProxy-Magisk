@@ -818,6 +818,7 @@ func workerOptions(options Options) worker.Options {
 		ServiceAddress:      options.ServiceAddress,
 		ServiceSecret:       options.ServiceSecret,
 		NetworkWatchEnabled: true,
+		RunDNSHandoff:       func(ctx context.Context) { RunDNSHandoff(ctx, options) },
 		SyncCatalog: func(ctx context.Context, groupID string, structureChanged bool) (string, bool, error) {
 			return SyncCatalog(ctx, options, groupID, structureChanged)
 		},

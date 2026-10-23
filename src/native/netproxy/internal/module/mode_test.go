@@ -335,7 +335,7 @@ func TestModeTargetCoreDefaultConfig(t *testing.T) {
 	}
 	content := targetCoreRead(t, paths.SingBoxConfig(staticDir))
 	modes, err := moduleconfig.ParseModes(content)
-	if err != nil || modes.Mode != "Rule" || !slices.Equal(modes.Available, []string{"Proxy", "RuleAllowAds", "Rule", "Direct"}) {
+	if err != nil || modes.Mode != "Rule" || !slices.Equal(modes.Available, []string{"Proxy", "Rule", "Direct"}) {
 		t.Fatalf("默认配置模式不完整: %+v %v", modes, err)
 	}
 	core := targetCoreBinary(t)

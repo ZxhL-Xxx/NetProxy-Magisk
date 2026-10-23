@@ -222,6 +222,8 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 
 ## 版本与发布
 
+- 配套本地测试包自 RC1.6 起通过 `tools/pack_agh_module.py` 从干净提交重新构建 Android ARM64 Native，并校验 PGO、目标与哈希；APK、DEX、sing-box 与 WebUI 保持原发行包字节。Android/WebUI 源码变化仍需完整构建及原签名流程；禁止用旧 Native 冒充新源码产物。
+
 - `src/module/module.prop` 中只有 `version=` 由人手动维护；`versionCode` 由 CI 按提交数写入，手改会在下次构建被覆盖。
 - CI 打包的是 `src/module/` 的内容而非目录本身，模块 zip 根目录直接是 `module.prop`。新增顶层文件时确认它应当出现在模块根目录。
 
@@ -368,6 +370,8 @@ app 关闭时保留原生 UID 筛选；开启时合并去重同向 UID/range，�
 eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。本分支默认使用跟随默认接口的 `tc` 与 `hijack` DNS；共享网络默认关闭，保存 `socket_assign`、`hijack` DNS 与常见 Android 热点/USB/蓝牙接口候选。核心等待缺失接口并跳过当前默认上游，候选是精确名称，不能宣称自动发现任意下游接口。启用共享时保持本机接管，AGH 国外上游依赖 Root 本机路径；不添加运行时 Shell 自动检测或新的后台进程。AGH 的 OUTPUT 规则不覆盖任意热点转发 DNS，Direct/Wi-Fi 绕过/停代理时不能承诺下游仍被完整过滤。
 
 本分支的默认配置依赖 AGH RC1 的配套客户端：`127.0.0.2` 对应国外上游，`127.0.0.3` 对应国内上游，均继承 AGH 全局过滤并使用独立缓存；来源绑定不能省略。AGH 保留自身 iptables，承接 Direct、Wi-Fi 绕过和 NetProxy 停止后的本机普通 DNS。国外 DoH 的两个 IPv4 地址在主路由中明确经总模式，Root 接管保持 include；修改端点时必须同步 AGH 客户端和路由。DNS final 为 dns-proxy，无失败后转国内解析的配置。节点引导解析独立直连，普通补充解析按 DNS 规则选择 AGH 客户端。移除内置广告及 block 拒绝引用，不删除用户既有规则文件；默认不做 geoip/cn 提前绕过。详情与设备验证边界见 docs/config/adguardhome.md。
+
+配套 Native 在 AGH 的三个 DNS 子链内按地址族维护带 `netproxy-agh-handoff` 标记的 TCP/UDP 53 RETURN，避免 nat OUTPUT 抢在 TC 前截获查询。交接只信任 ready 的实际 PID、API 启动身份与 `service.json.dns_handoff` 记录的实际入站 IPv4/IPv6 DNS 能力；Direct、Wi-Fi 绕过、明确停服和确认核心退出时撤回。API 暂时故障保留现有归属，不能因节点或国外 DNS 失败退回国内。现有 Worker 通过文件事件、模式流和 pidfd 协调 AGH 重建；不支持 pidfd 时只每 2 秒检查核心进程，不轮询 Shell/防火墙，不另加守护进程。不能清空其他模块规则或全局 conntrack，也不能承诺异常退出、旧会话与规则重建零窗口。
 
 TUN 使用原生 `include_interface/exclude_interface`、CIDR、规则集与 MAC 筛选，不建立 local/shared/hybrid 映射。默认接口 `netproxy`、地址 `172.19.0.1/30` 与 `fdfe:dcba:9876::1/126`、DNS `hijack`；不输出 stack 或额外默认 MTU/strict_route/marks。目标 sing-box check 不等于设备能力证明，TUN、NFQUEUE、IPv6 TPROXY 与清理仍需真机确认。eBPF 能力探测继续使用 `ebpf status`，不新增 `tun status`。
 

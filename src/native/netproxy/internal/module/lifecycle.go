@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/agh"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
@@ -141,7 +142,7 @@ func StartService(ctx context.Context, options Options) (err error) {
 		}
 		var identity []ServiceIdentity
 		if state.PID == int64(pid) && state.CoreStartedAtMillis == startedAt && state.ActiveBackend != "" {
-			identity = append(identity, ServiceIdentity{state.ActiveBackend, startedAt})
+			identity = append(identity, ServiceIdentity{Backend: state.ActiveBackend, StartedAtMillis: startedAt, DNSHandoff: state.DNSHandoff})
 		}
 		if _, err := applyConfiguredNetwork(ctx, options, reloadNetworkConfig); err != nil {
 			return err
@@ -177,6 +178,10 @@ func StartService(ctx context.Context, options Options) (err error) {
 // 事务内只启动已经准备好的快照，不恢复或重建正在应用的 journal。
 func startPreparedService(ctx context.Context, options Options, prepared PrepareResult) (err error) {
 	options.networkEvaluation = prepared.Network
+	identity, err := preparedServiceIdentity(prepared, 0)
+	if err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -225,15 +230,19 @@ func startPreparedService(ctx context.Context, options Options, prepared Prepare
 	}
 	readyAt := time.Now().Unix()
 	stage = "state"
-	if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, "", ServiceIdentity{prepared.Backend, actualStartedAt}); err != nil {
+	identity.StartedAtMillis = actualStartedAt
+	if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, "", identity); err != nil {
 		return failServiceStateWrite(options, pid, startedAt, "ready", err)
+	}
+	if err := setDNSHandoff(ctx, options, *identity.DNSHandoff); err != nil {
+		return failServiceStart(options, pid, startedAt, "DNS 接管交接失败", err)
 	}
 	logService(options, "INFO", "service.start", "success", "sing-box 服务启动完成 (PID: %d)", pid)
 	return nil
 }
 
 // StopService 终止 sing-box 并清理所有可重建运行时配置。
-func StopService(_ context.Context, options Options) error {
+func StopService(ctx context.Context, options Options) error {
 	if err := ensureLifecycleStateDir(options); err != nil {
 		return err
 	}
@@ -244,17 +253,18 @@ func StopService(_ context.Context, options Options) error {
 	pid := service.FindProcess(options.SingBoxPath, int(state.PID))
 	logService(options, "INFO", "service.stop", "started", "停止 sing-box 服务")
 	stateWriteErr := writeServiceState(options.StateFile, "stopping", int64(pid), state.StartedAt, 0, "")
+	handoffErr := setDNSHandoff(ctx, options, agh.Scope{})
 	if pid > 0 {
 		if err := terminateService(options, pid); err != nil {
 			message := "sing-box 进程停止失败"
 			failedWriteErr := writeServiceState(options.StateFile, "failed", int64(pid), state.StartedAt, 0, message)
-			return errors.Join(fmt.Errorf("%s: %w", message, err), stateErr, stateWriteErr, failedWriteErr)
+			return errors.Join(fmt.Errorf("%s: %w", message, err), stateErr, stateWriteErr, failedWriteErr, handoffErr)
 		}
 	}
 	cleanupRuntimeFiles(options)
 	stoppedWriteErr := writeServiceState(options.StateFile, "stopped", 0, 0, 0, "")
-	if err := errors.Join(stateErr, stateWriteErr, stoppedWriteErr); err != nil {
-		return fmt.Errorf("停止 sing-box 已完成，但服务状态写入失败: %w", err)
+	if err := errors.Join(stateErr, stateWriteErr, stoppedWriteErr, handoffErr); err != nil {
+		return fmt.Errorf("停止 sing-box 已完成，但收尾失败: %w", err)
 	}
 	logService(options, "INFO", "service.stop", "success", "sing-box 服务已停止")
 	return nil
@@ -349,6 +359,10 @@ func reloadConfigSnapshot(ctx context.Context, options Options, journal configAp
 
 func reloadPreparedService(ctx context.Context, options Options, prepared PrepareResult, synchronizeSelection bool) error {
 	options.networkEvaluation = prepared.Network
+	identity, err := preparedServiceIdentity(prepared, 0)
+	if err != nil {
+		return err
+	}
 	state, _ := ReadServiceState(options.StateFile)
 	pid := service.FindProcess(options.SingBoxPath, int(state.PID))
 	if pid <= 0 {
@@ -361,6 +375,12 @@ func reloadPreparedService(ctx context.Context, options Options, prepared Prepar
 	oldStartedAt := oldStartedAtMillis / 1000
 	if err := writeServiceState(options.StateFile, "starting", int64(pid), oldStartedAt, 0, ""); err != nil {
 		return err
+	}
+	if state.DNSHandoff != nil {
+		retained := agh.Scope{IPv4: state.DNSHandoff.IPv4 && identity.DNSHandoff.IPv4, IPv6: state.DNSHandoff.IPv6 && identity.DNSHandoff.IPv6}
+		if err := setDNSHandoff(ctx, options, retained); err != nil {
+			return restoreReloadState(ctx, options, pid, oldStartedAt, state.ReadyAt, err)
+		}
 	}
 	if err := signalServiceReload(pid); err != nil {
 		return restoreReloadState(ctx, options, pid, oldStartedAt, state.ReadyAt, err)
@@ -380,7 +400,11 @@ func reloadPreparedService(ctx context.Context, options Options, prepared Prepar
 	if _, err := syncConfiguredMode(ctx, options); err != nil {
 		return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
 	}
-	if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt/1000, time.Now().Unix(), "", ServiceIdentity{prepared.Backend, startedAt}); err != nil {
+	identity.StartedAtMillis = startedAt
+	if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt/1000, time.Now().Unix(), "", identity); err != nil {
+		return err
+	}
+	if err := setDNSHandoff(ctx, options, *identity.DNSHandoff); err != nil {
 		return err
 	}
 	logService(options, "INFO", "service.reload", "success", "sing-box 配置重新加载完成")
@@ -622,6 +646,10 @@ func failServiceStart(options Options, pid int, startedAt int64, message string,
 		stopErr = terminateServiceForStart(options, pid)
 	}
 	cleanupRuntimeFiles(options)
+	var handoffErr error
+	if service.FindProcess(options.SingBoxPath, pid) != pid || pid <= 0 {
+		handoffErr = setDNSHandoff(context.Background(), options, agh.Scope{})
+	}
 	stateErr := writeServiceState(options.StateFile, "failed", int64(pid), startedAt, 0, message)
 	logService(options, "ERROR", "service.start", "failed", "%s: %v", message, cause)
 	var convergeErr error
@@ -630,7 +658,7 @@ func failServiceStart(options Options, pid int, startedAt int64, message string,
 			convergeErr = fmt.Errorf("清理未收敛的服务状态失败: %w", err)
 		}
 	}
-	return errors.Join(fmt.Errorf("%s: %w", message, cause), stopErr, stateErr, convergeErr)
+	return errors.Join(fmt.Errorf("%s: %w", message, cause), stopErr, stateErr, convergeErr, handoffErr)
 }
 
 func failServiceStateWrite(options Options, pid int, startedAt int64, state string, cause error) error {

@@ -44,7 +44,7 @@ RC1.5 的六个地区组均已排除常见 `Traffic:`、`Expire:`、剩余流量
 
 ```text
 NetProxy 正常运行，Rule / Proxy 模式：
-普通 53 查询 → eBPF hijack → sing-box DNS 规则
+普通 53 查询 → AGH 链内条件 RETURN → eBPF/TUN hijack → sing-box DNS 规则
   国内 → 绑定来源 127.0.0.3 → AGH:5591 → 国内 DoH → 直连
   国外/未知 → 绑定来源 127.0.0.2 → AGH:5591 → 国外 DoH → Proxy
 
@@ -53,6 +53,19 @@ NetProxy 正常运行，Rule / Proxy 模式：
 ```
 
 两个来源地址只是本机客户端标识，AGH 仍只监听 `127.0.0.1:5591`。两个客户端都继承 AGH 全局过滤和放行策略，各有独立上游缓存；NetProxy 关闭重复 DNS 缓存，避免切换解析路径或更新规则时继续返回另一层的旧结果。
+
+### RC1.6 自动交接
+
+ADG 的“启用 iptables”保持开启。Native 根据已就绪实例的 PID、Service API 启动身份和实际入站 DNS 能力，在 AGH 的三个 DNS 子链中分别管理 TCP/UDP 53 的条件 `RETURN`，标记为 `netproxy-agh-handoff`。它只回到 OUTPUT 的调用处；其他模块的后续规则仍可生效，不清空公共规则或 AGH 原有规则。
+
+- Rule/Proxy 且本机 DNS hijack 生效时，AGH 的独立重定向避让，让 NetProxy 先区分国内/国外，再交给 AGH 过滤。
+- 经 NetProxy 切到 Direct、Wi-Fi 绕过或主动停服时撤回避让；核心确认退出后也恢复 AGH 原有接管。IPv4、IPv6 分别处理，没有接管 IPv6 时不撤掉 AGH 的 IPv6 保护。
+- 核心仍存活而节点、国外 DoH 或本地控制接口暂时失败时，保留现有归属并重试，不以国外连接失败为理由回退国内解析。
+- AGH 重建规则后，现有 Worker 根据文件事件重新核对。正常切模式不重启 AGH，不另起 Shell 守护进程；正常空闲等待事件，状态不变时不执行 iptables。内核不支持 pidfd 时仅每 2 秒检查核心进程是否退出。
+
+请通过 NetProxy 管理器切换持久模式和 Wi-Fi 策略。其他面板直接切 Direct 的事件也会撤回避让，但不会重建 NetProxy 为 Direct 生成的入站；切回代理应通过 NetProxy 管理器完成。`respect_policy`、只接管 TCP 或只共享网络等设置不属于全局本机 DNS hijack，不启用全局避让。TUN 有应用/UID 或目的地址筛选时也不全局避让，以保留被排除应用的 AGH 过滤；这类自定义 TUN 设置不在本版双通道兼容承诺内，默认完整 TUN 与 eBPF hijack 不受此限制。
+
+切换仍有边界：AGH 重建链、异常退出检测和旧 DNS 会话/conntrack 收敛可能存在短暂窗口，无法承诺零丢包。浏览器缓存和长连接也会干扰验证，测试时彻底退出浏览器再重开；不全局清空 conntrack。Worker 和核心同时被强杀时，需 Worker 恢复或重启模块后才能重新协调。AGH 自身停止时，NetProxy 的 DNS 依赖仍然存在，不自动绕过过滤。
 
 `dns.final=dns-proxy`；国外解析路径没有失败后改用国内 DNS 的候选服务器。代理节点域名使用独立、加密直连的引导解析器，避免“解析节点先需要代理”的循环。业务路由的 `resolve` 不指定服务器，让核心按 DNS 规则选择 AGH 国内或国外客户端，并保留解析结果供后续连接使用；不使用 `match_only`，避免只为匹配解析后又在出站中重复解析。真实核心测试使用独立模拟引导解析器，验证这些业务解析不会落到引导通道。
 
@@ -65,14 +78,16 @@ NetProxy 正常运行，Rule / Proxy 模式：
 配套测试包会自动完成配置，无需手动编辑 YAML、创建客户端或导入 JSON。ADG 基于 RC1 分支，延用官方 AdGuard Home v0.107.79 和完整 DNS 规则，不加入 RC2 文件过滤。
 
 1. 在 Root 管理器中覆盖刷入 **ADG-RC1-NetProxy.1-arm64.zip**。已有用户选“保留配置”（音量上键；不操作 30 秒也会保留）。
-2. 不用中途重启，继续刷入 **NetProxy-v8.6.1-AGH-RC1.5-arm64.zip**。已有用户使用默认“保留现有数据”；管理器安装也可使用默认选项。
+2. 不用中途重启，继续刷入 **NetProxy-v8.6.1-AGH-RC1.6-arm64.zip**。已有用户使用默认“保留现有数据”；管理器安装也可使用默认选项。
 3. 确认两个模块均已启用，重启手机，等待 ADG 加载规则。打开 NetProxy 管理器，选择已有节点并启动服务；首次使用仍需导入自己的订阅。
 
 普通 ARM64 手机使用上述两个 ARM64 包。ADG 另有 ARMv7 单独包，但 NetProxy 官方 8.6.1 配套包为 ARM64，不能据此认为 32 位手机也能运行两者。
 
 手机的“私人 DNS”和浏览器自带的“安全 DNS”应关闭，让普通查询经过模块。模块内上游仍使用加密 DoH。
 
-已经装好此前配套包的用户，本次只需覆盖刷入 NetProxy RC1.5 并重启；ADG 不需要重刷。总模式原来缓存的地区选项失效后固定回到 Proxy；应用原先选 All Proxies 时会回到默认总模式，仍有效的地区/direct 选择可能沿用，请升级后核对面板。升级会备份并替换主配置与入站预设，原订阅和节点继续保留；临时 TUN、应用黑名单、共享开关及其他自定义入站设置会被本包预设替换。初始为 eBPF 本机 TC，共享关闭；需要热点时按下节开启。刷包不会自动修改各订阅的排除表达式，节点页去除提示条目需完成上节的一次设置。Google Play 下载等待问题尚未单独处理。
+已经装好此前配套包的用户，本次覆盖刷入 NetProxy RC1.6 并重启；ADG 不需要重刷。此前为排障关闭过 ADG iptables 的用户，先确认新 NetProxy 服务已就绪，再在 ADG WebUI 开启“启用 iptables”、保存，并停止/启动一次 ADG 核心；以后保留开启，自动交接无需反复操作此开关。
+
+总模式原来缓存的地区选项失效后固定回到 Proxy；应用原先选 All Proxies 时会回到默认总模式，仍有效的地区/direct 选择可能沿用，请升级后核对面板。升级会备份并替换主配置与入站预设，原订阅和节点继续保留；临时 TUN、应用黑名单、共享开关及其他自定义入站设置会被本包预设替换。初始为 eBPF 本机 TC，共享关闭；需要热点时按下节开启。刷包不会自动修改各订阅的排除表达式，节点页去除提示条目需完成上节的一次设置。Google Play 下载等待问题尚未单独处理。
 
 此前的 **NetProxy-v8.6.1-AGH-RC1.3-TC-test-arm64.zip** 只覆盖本机 `tc`，用户已反馈“好像可以了”。RC1.4 将其纳入源码默认配置，另将共享偏好设为 `socket_assign` 并补充常见接口候选，仍保留 Root 接管、DNS hijack、AGH 双通道和相同分流。不把初步恢复当作全场景稳定。需要恢复已经可用的 TUN 时，在设置 → 入站设置 → 通用设置将代理后端切回 TUN，按提示重启服务即可；本节的共享设置仅针对 eBPF。
 
@@ -99,7 +114,7 @@ ADG 兼容升级前的备份为 `/data/adb/agh/bin/AdGuardHome.yaml.before-netpr
 
 ### 包的来源
 
-这是本地测试用的官方发行包配置衍生版。NetProxy 固定使用官方 v8.6.1（源码 3fd2a1c）的核心、Native 程序、原签名管理器和辅助 DEX，逐文件保持字节不变；不改 Native、Android 或 WebUI 源码。构建清单与 SHA-256 随包提供，并移除指向官方包的更新入口，以免覆盖配套设置。今后修改上述组件时须改走完整源码构建与签名流程。
+这是本地测试衍生版。RC1.6 的 Native 从本地已提交源码重新编译为 Android ARM64，使用 Go 1.27.3、仓库 PGO、`CGO_ENABLED=0` 和发布裁剪参数，不注入统计上传凭据。sing-box 核心、原签名管理器、辅助 DEX 与 WebUI 继续来自已校验的官方 v8.6.1（源码 3fd2a1c），Android/WebUI 源码保持不变。构建工具要求干净提交，记录源码提交、Native 哈希与构建参数，并逐项校验其他二进制未变。构建清单与 SHA-256 随包提供；移除指向官方包的更新入口，以免覆盖配套设置。修改 Android/WebUI 时仍需完整构建及原签名流程。
 
 高级用户的离线配置合并工具仍保留在 `tools/prepare_agh_config.py`，普通用户刷入配套包即可。
 
@@ -113,6 +128,8 @@ eBPF 本机使用 `tc + hijack`，共享按需启用 `socket_assign + hijack`；
 
 ## 验证与边界
 
+- RC1.6 新增测试覆盖规则所有权、幂等、独立重建、部分失败收敛、地址族和实例身份/API 故障。Windows 应用控制拦截了部分 Go 测试 EXE 与子进程，因此全量 Go 测试未通过；被拦截部分不能记为验证成功。Linux pidfd 退出/取消测试已加入，仍需可执行环境与真机验证。
+- ADG iptables 开启后须验证 Telegram Web/Uptodown 的新会话、Direct/Rule/Proxy 往返、切网、AGH 重启、核心异常退出和整机重启。代理模式应命中两个 NetProxy 客户端，停服后恢复 AGH 原有入口。回退旧版前先主动停止新 NetProxy，撤回自有避让，再刷旧包；Worker 损坏时重启手机会清除临时内核规则。
 - 在 AGH 查询日志中确认国内查询命中 Direct DNS 客户端，国外查询命中 Proxy DNS 客户端；两类均验证一个拦截域和一个作者放行域。
 - 对照 NetProxy 连接记录，确认两个国外 DoH 地址在 Rule/Proxy 下确实经代理；代理故障时，国外查询应失败而不切国内解析器。
 - 测试手机本机的 Direct、Wi-Fi 绕过、停止 NetProxy：AGH 应仍接收普通 DNS，正常国内访问和过滤应保留。
@@ -126,6 +143,8 @@ eBPF 本机使用 `tc + hijack`，共享按需启用 `socket_assign + hijack`；
 本机使用完整 AGH 规则的模拟上游测试确认：`paileactivist.github.io`、`docs.qq.com`、`doc.weixin.qq.com` 均不被该快照拦截；腾讯文档按国内规则直连，测试站进入 GitHub 组。这个结论仅覆盖随包规则与配置，不能替代手机上已更新规则、实际 DNS 响应、入站和 TLS 日志。
 
 用户报告 Via 在关闭自身广告拦截后仍报 `ERR_CONNECTION_CLOSED`，同网址 Firefox 可以打开；微信访问 `docs.qq.com` 时 Direct 模式仍失败，加入应用黑名单后恢复。Direct 通常仍让业务连接经过 sing-box 转发，应用黑名单是在入站绕过，两者不同。用户随后取消微信绕过并切换到 TUN，Via 与微信内腾讯文档均恢复；再对 TC 诊断包反馈“好像可以了”，准备继续测试。这些对照更支持当前设备的 cgroup 接管路径存在兼容性问题，但不能确认是具体哪项内核、IPv6 或核心缺陷。后续继续验证 TC 下的原链接、Wi-Fi/流量切换、重启恢复、DNS 过滤，以及微信发送图片、文件和语音等常用功能；出现问题时记录网络、时刻和核心日志。当前不添加未经证实的域名白名单或修改整体 DNS 隐私策略。
+
+后续 RC1.5 的 eBPF TC 下 Telegram/Uptodown 仍失败，关闭 ADG iptables 后全部恢复；结合 AGH 查询来源，进一步定位到 AGH nat OUTPUT 先截获普通 DNS，使其绕开 TC 和双客户端分流。RC1.6 针对此入口冲突增加自动交接。此前只检查已进入核心的流量，不能证明 Android 挂钩兼容。
 
 回退时先恢复旧 NetProxy 配置；两个 AGH 客户端可以保留，也可删除。工具没有改变 AGH 全局上游和规则。始终保留你自己的修改前备份。
 

@@ -85,6 +85,7 @@ type Options struct {
 	NewTimer                TimerFactory
 	CoreRunning             func() bool
 	RunServer               func(context.Context, <-chan struct{}) error
+	RunDNSHandoff           func(context.Context)
 	Telemetry               interface {
 		Run(context.Context, func() bool, func())
 		Notify()
@@ -139,6 +140,11 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		logger = log.New(os.Stderr, "", 0)
 	}
 	background, cancelBackground := context.WithCancel(ctx)
+	var handoffDone chan struct{}
+	if options.RunDNSHandoff != nil {
+		handoffDone = make(chan struct{})
+		go func() { defer close(handoffDone); options.RunDNSHandoff(background) }()
+	}
 	var telemetryDone chan struct{}
 	if options.Telemetry != nil {
 		telemetryDone = make(chan struct{})
@@ -158,6 +164,9 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 			cancelNetwork()
 		}
 		cancelBackground()
+		if handoffDone != nil {
+			<-handoffDone
+		}
 		if telemetryDone != nil {
 			<-telemetryDone
 		}

@@ -92,6 +92,58 @@ func RuntimeDNSState(content []byte) (string, error) {
 	return c.DNSState()
 }
 
+// RuntimeLocalDNSHijack 只认可实际运行时的全局本机 DNS 接管。
+func RuntimeLocalDNSHijack(content []byte) (ipv4, ipv6 bool, err error) {
+	var runtime Runtime
+	if err := json.Unmarshal(content, &runtime); err != nil {
+		return false, false, err
+	}
+	if len(runtime.Inbounds) != 1 {
+		return false, false, fmt.Errorf("受管运行时必须只有一个入站")
+	}
+	var entry struct {
+		Type    string `json:"type"`
+		DNSMode string `json:"dns_mode"`
+	}
+	if err := json.Unmarshal(runtime.Inbounds[0], &entry); err != nil {
+		return false, false, err
+	}
+	switch entry.Type {
+	case "ebpf":
+		c := Config{EBPF: runtime.Inbounds[0]}
+		native, err := c.EBPFOptions()
+		if err != nil {
+			return false, false, err
+		}
+		local, _ := native.EffectiveEnablement()
+		networks := native.Network.Build()
+		both := len(networks) == 0 || (slices.Contains(networks, "tcp") && slices.Contains(networks, "udp"))
+		hijack := local && both && native.Local.DNSMode == "hijack"
+		return hijack, hijack && (native.Local.IPv6 == nil || *native.Local.IPv6), nil
+	case "tun":
+		if entry.DNSMode != "hijack" {
+			return false, false, nil
+		}
+		native, err := (Config{TUN: runtime.Inbounds[0]}).TUNOptions()
+		if err != nil {
+			return false, false, err
+		}
+		// TUN 的 UID/目的地址筛选先于 DNS；不能像 eBPF hijack 一样放行所有应用。
+		if len(native.IncludeUID)+len(native.IncludeUIDRange)+len(native.ExcludeUID)+len(native.ExcludeUIDRange)+
+			len(native.IncludeAndroidUser)+len(native.IncludePackage)+len(native.ExcludePackage)+
+			len(native.RouteAddress)+len(native.RouteAddressSet)+len(native.RouteExcludeAddress)+len(native.RouteExcludeAddressSet) > 0 {
+			return false, false, nil
+		}
+		for _, prefix := range native.Address {
+			ipv4 = ipv4 || prefix.Addr().Is4()
+			ipv6 = ipv6 || prefix.Addr().Is6()
+		}
+		return ipv4, ipv6, nil
+	default:
+		return false, false, fmt.Errorf("未知受管入站: %s", entry.Type)
+	}
+}
+
 func (c Config) Build(ctx context.Context) (BuildResult, error) {
 	if err := ctx.Err(); err != nil {
 		return BuildResult{}, err

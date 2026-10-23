@@ -8,24 +8,28 @@ import (
 	"time"
 
 	json "encoding/json/v2"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/agh"
 )
 
 // ServiceState 描述模块服务的持久状态快照。
 type ServiceState struct {
-	Schema              int    `json:"schema"`
-	State               string `json:"state"`
-	PID                 int64  `json:"pid"`
-	StartedAt           int64  `json:"started_at"`
-	ReadyAt             int64  `json:"ready_at"`
-	Error               string `json:"error"`
-	UpdatedAt           int64  `json:"updated_at"`
-	ActiveBackend       string `json:"active_backend"`
-	CoreStartedAtMillis int64  `json:"core_started_at_millis"`
+	Schema              int        `json:"schema"`
+	State               string     `json:"state"`
+	PID                 int64      `json:"pid"`
+	StartedAt           int64      `json:"started_at"`
+	ReadyAt             int64      `json:"ready_at"`
+	Error               string     `json:"error"`
+	UpdatedAt           int64      `json:"updated_at"`
+	ActiveBackend       string     `json:"active_backend"`
+	CoreStartedAtMillis int64      `json:"core_started_at_millis"`
+	DNSHandoff          *agh.Scope `json:"dns_handoff,omitempty"`
 }
 
 type ServiceIdentity struct {
 	Backend         string
 	StartedAtMillis int64
+	DNSHandoff      *agh.Scope
 }
 
 // ReadServiceState 读取服务状态；缺失或损坏时返回 stopped，避免状态文件影响恢复流程。
@@ -74,6 +78,7 @@ func WriteServiceState(path, state string, pid, startedAt, readyAt int64, messag
 		}
 		stateValue.ActiveBackend = identity[0].Backend
 		stateValue.CoreStartedAtMillis = identity[0].StartedAtMillis
+		stateValue.DNSHandoff = identity[0].DNSHandoff
 	}
 	content, err := json.Marshal(stateValue, json.Deterministic(true))
 	if err != nil {
