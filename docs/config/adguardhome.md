@@ -75,12 +75,32 @@ Wi-Fi 与移动数据之间保持同一 Rule/Proxy 模式及入站 DNS 参数时
 
 境外 DNS 出口跟随「总模式」，不会自动跟随每一个业务选择器的独立节点。国内 DNS 直连是本方案的明确策略；DNS 检测站可能显示国内解析器，这不等于境外查询一定泄漏。Direct、绕过和停代理时使用 AGH 原有直连解析，保留过滤，不承诺这些模式仍使用代理出口。本版继续使用真实 IP，没有启用 FakeIP。
 
+### 代理节点 IPv4 出口兼容
+
+如果固定 IPv4 目标正常、固定 IPv6 目标在不同代理核心下均失败，可以先使用下列统一策略。它适配当前出口能力；节点 IPv6 出口的恢复仍需服务商处理。配套 ADG NetProxy.2 安装时自动合并并启用「NetProxy 代理 DNS IPv4 兼容」本地列表，保留原有自定义规则，无需逐站添加。
+
+规则源文件为 `examples/adguardhome/proxy-ipv4-only.txt`，与配套 ADG 中的本地列表保持一致：
+
+```text
+*$client=127.0.0.2,dnstype=AAAA|HTTPS|SVCB,dnsrewrite=NOERROR;;
+```
+
+这条规则覆盖所有经 `NetProxy Proxy DNS` 客户端解析的域名，将 AAAA、HTTPS 和 SVCB 查询返回为空的 `NOERROR`；A 查询继续经过原有广告过滤和国外上游。同步处理 HTTPS/SVCB 是为了避免浏览器从其 `ipv6hint` 再次获取 IPv6 地址。这也会移除这些记录提供的 ECH、ALPN 等发现信息，普通 HTTPS 仍可通过 A 记录连接。应用自带 DoH、硬编码地址和旧缓存可能绕过这条 DNS 策略；IPv6-only 服务仍需可用的 IPv6 出口。
+
+`127.0.0.3` 国内 DNS、AGH 独立使用和 NetProxy 的 Direct 模式保持原有双栈策略；Proxy 模式下所有查询都进入代理 DNS，因此也会统一受此规则影响。规则由 AGH 现有过滤引擎处理，不增加守护进程、网络探测或切网重启逻辑，也不把国外 DNS 失败回退到国内。
+
+不要用关闭 eBPF「本机接管 IPv6」代替本规则：前者停止拦截 IPv6 业务，并不阻止通过 IPv4 DNS 传输返回 AAAA，可能使业务绕过代理直接使用系统 IPv6。要保留代理边界，应继续接管 IPv6，仅在代理 DNS 通道限制可用地址信息。
+
+保留配置安装后重启手机，彻底退出浏览器再重开；此前单站临时规则可以删除。恢复双栈时在 AGH「过滤器 → DNS 封锁清单」禁用这份列表，删除仍保留的单站临时 IPv6 规则，清除 AGH DNS 缓存并重开浏览器；重新安装配套模块会再次启用预设。验证应查看普通网页访问以及同一次 A/AAAA 查询详情；使用 `curl --resolve` 固定 IPv6 地址会绕过 DNS 策略，仍然失败不能据此判断规则未生效。
+
+本机隔离测试通过真实 AGH 与 sing-box 核心检查规则开启和关闭时的 UDP/TCP 查询、HTTPS/SVCB 地址提示、国内/国外通道、Rule/Proxy/Direct 模式和删除规则后的恢复。它不代替 Android 真机验收。
+
 ## 直接刷入配套模块
 
 配套测试包会自动完成配置，无需手动编辑 YAML、创建客户端或导入 JSON。ADG 基于 RC1 分支，延用官方 AdGuard Home v0.107.79 和完整 DNS 规则，不加入 RC2 文件过滤。
 
-1. 在 Root 管理器中覆盖刷入 **ADG-RC1-NetProxy.1-arm64.zip**。已有用户选“保留配置”（音量上键；不操作 30 秒也会保留）。
-2. 不用中途重启，继续刷入 **NetProxy-v8.6.1-AGH-RC1.6-arm64.zip**。已有用户使用默认“保留现有数据”；管理器安装也可使用默认选项。
+1. 在 Root 管理器中覆盖刷入 **ADG-RC1-NetProxy.2-arm64.zip**。已有用户选“保留配置”（音量上键；不操作 30 秒也会保留）。
+2. 不用中途重启，继续刷入 **NetProxy-v8.6.1-AGH-RC1.7-arm64.zip**。已有用户使用默认“保留现有数据”；管理器安装也可使用默认选项。
 3. 确认两个模块均已启用，重启手机，等待 ADG 加载规则。打开 NetProxy 管理器，选择已有节点并启动服务；首次使用仍需导入自己的订阅。
 
 普通 ARM64 手机使用上述两个 ARM64 包。ADG 另有 ARMv7 单独包，但 NetProxy 官方 8.6.1 配套包为 ARM64，不能据此认为 32 位手机也能运行两者。
@@ -137,7 +157,7 @@ eBPF 本机使用 `tc + hijack`，共享按需启用 `socket_assign + hijack`；
 - 测试手机本机的 Direct、Wi-Fi 绕过、停止 NetProxy：AGH 应仍接收普通 DNS，正常国内访问和过滤应保留。
 - Android TC/socket_assign 挂载、IPv4/IPv6、切网、应用绕过和启停路径仍需真机验证。AGH 原有 IPv6 DNS 拒绝策略继续存在；它不等于覆盖任意 IPv6-only 网络。
 - 共享网络默认关闭；启用后须用第二台设备验证热点代理、普通 DNS 过滤和热点重开恢复。不声称 Direct/Wi-Fi 绕过/停代理后仍完整过滤热点下游。
-- 本机真实核心联动测试覆盖 161 项，包含总模式经 Proxy/Select/Auto 连接实际模拟节点、八项应用候选、提示条目地区过滤，以及 26 项已进入核心的下游 DNS 检查。Auto 的无提示节点验证使用模拟订阅排除后的 Provider，不代表刷包已修改手机订阅。这些检查不模拟 Android UI、eBPF、热点转发、DHCP 或实际 IPv6 链路。
+- 本机真实核心联动测试覆盖 IPv4 兼容模式 249 项、禁用列表后的双栈对照 233 项，包含总模式经 Proxy/Select/Auto 连接实际模拟节点、八项应用候选、提示条目地区过滤、已进入核心的下游 DNS，以及 A/AAAA/HTTPS/SVCB 的 UDP/TCP 与来源隔离检查。Direct 的 DNS 对照模拟交还 AGH 独立入口，不能据此证明 Android 挂钩已切换。Auto 的无提示节点验证使用模拟订阅排除后的 Provider，不代表刷包已修改手机订阅。这些检查不模拟 Android UI、eBPF、热点转发、DHCP 或实际 IPv6 链路。
 - 应用自带 DoH/DoT、浏览器安全 DNS、直接 IP 和同域广告不因这套普通 DNS 路径自动受到完整控制。
 
 ### 浏览器与微信内页面排障

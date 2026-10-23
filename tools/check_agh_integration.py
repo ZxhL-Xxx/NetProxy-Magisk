@@ -52,7 +52,13 @@ class Upstream(threading.Thread):
             end += 5
             self.questions.append(".".join(labels))
             qtype = struct.unpack_from("!H", data, end - 4)[0]
-            answer = socket.inet_pton(socket.AF_INET6, f"2001:db8::{self.suffix}") if qtype == 28 else socket.inet_aton(self.answers.get('.'.join(labels), f"198.51.100.{self.suffix}"))
+            ipv4 = socket.inet_aton(self.answers.get('.'.join(labels), f"198.51.100.{self.suffix}"))
+            ipv6 = socket.inet_pton(socket.AF_INET6, f"2001:db8::{self.suffix}")
+            if qtype in (64, 65):
+                # ServiceMode 同时携带两个地址族的提示，验证不能只过滤 AAAA。
+                answer = b"\x00\x01\x00" + struct.pack("!HH", 4, 4) + ipv4 + struct.pack("!HH", 6, 16) + ipv6
+            else:
+                answer = ipv6 if qtype == 28 else ipv4
             response = data[:2] + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0) + data[12:end]
             response += b"\xc0\x0c" + struct.pack("!HHIH", qtype, 1, 60, len(answer)) + answer
             self.sock.sendto(response, address)
@@ -63,7 +69,7 @@ class Upstream(threading.Thread):
         self.sock.close()
 
 
-def query(port, host, source="127.0.0.1", qtype=1, tcp=False):
+def query(port, host, source="127.0.0.1", qtype=1, tcp=False, raw=False):
     question = b"".join(bytes([len(label)]) + label.encode() for label in host.split(".")) + b"\0" + struct.pack("!HH", qtype, 1)
     request = struct.pack("!HHHHHH", 1234, 0x0100, 1, 0, 0, 0) + question
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM) as sock:
@@ -82,6 +88,8 @@ def query(port, host, source="127.0.0.1", qtype=1, tcp=False):
         else:
             sock.sendto(request, ("127.0.0.1", port))
             data, _ = sock.recvfrom(4096)
+    if raw:
+        return data
     rcode = data[3] & 15
     address = None
     if rcode == 0 and int.from_bytes(data[6:8], "big"):
@@ -90,13 +98,20 @@ def query(port, host, source="127.0.0.1", qtype=1, tcp=False):
     return rcode, address
 
 
-def api(port, path, body=None, method=None):
+def api(port, path, body=None, method=None, decode=True):
+    headers = {'Authorization': 'Bearer singbox'}
+    if body is not None:
+        headers['Content-Type'] = 'application/json'
     request = urllib.request.Request(f"http://127.0.0.1:{port}{path}",
         data=json.dumps(body).encode() if body is not None else None,
-        headers={'Authorization': 'Bearer singbox', 'Content-Type': 'application/json'},
+        headers=headers,
         method=method or ('PUT' if body is not None else 'GET'))
-    with urllib.request.urlopen(request, timeout=2) as response:
-        if response.status == 204:
+    try:
+        response = urllib.request.urlopen(request, timeout=2)
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f'{path}: {error.code}: {error.read().decode("utf-8", "replace")}') from error
+    with response:
+        if response.status == 204 or not decode:
             return None
         return json.load(response)
 
@@ -182,12 +197,14 @@ def main():
     parser.add_argument("--sing-box", type=Path, required=True)
     parser.add_argument("--agh", type=Path, required=True)
     parser.add_argument("--agh-source", type=Path, required=True)
+    parser.add_argument("--dual-stack", action="store_true", help="验证禁用兼容列表后的原有双栈策略")
     args = parser.parse_args()
+    ipv4_only = not args.dual_stack
     base = ROOT / ".agents/runs"
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="agh-wire-", dir=base)).resolve()
     assert work.parent == base.resolve()
-    upstreams = [Upstream(11), Upstream(22), Upstream(33)]
+    upstreams = [Upstream(11), Upstream(22), Upstream(33), Upstream(44)]
     processes, logs, results, spies, observed = [], [], [], [], []
     udp_sink = None
     try:
@@ -206,6 +223,12 @@ def main():
             client["upstreams"] = [f"127.0.0.1:{upstream.port}"]
         config["filtering"]["filters_update_interval"] = 0
         config["user_rules"].extend(["||fixture-block.example^$important", "@@||fixture-allow.example^$important"])
+        policy = next(item for item in config['filters'] if item['id'] == 2026102301)
+        policy['enabled'] = ipv4_only
+        expected_policy = (ROOT / 'examples/adguardhome/proxy-ipv4-only.txt').read_text(encoding='utf-8')
+        installed_policy = (args.agh_source / 'bin/data/userfilters/netproxy-proxy-ipv4.txt').read_text(encoding='utf-8')
+        active_rules = lambda text: [line for line in text.splitlines() if line and not line.startswith('!')]
+        assert active_rules(installed_policy) == active_rules(expected_policy)
         sources = []
         for section in ("filters", "whitelist_filters"):
             for item in config[section]:
@@ -217,7 +240,7 @@ def main():
                 target.parent.mkdir(exist_ok=True)
                 shutil.copyfile(source, target)
                 item["url"] = target.as_posix()
-                sources.append(target.as_posix())
+                sources.append(str(target))
         config["filtering"]["safe_fs_patterns"] = sources
         agh_work = work / "agh"
         agh_work.mkdir(exist_ok=True)
@@ -230,7 +253,7 @@ def main():
         while time.monotonic() < deadline:
             try:
                 state = api(http_port, "/control/filtering/status")
-                if all(item.get("rules_count", 0) for key in ("filters", "whitelist_filters") for item in state[key]):
+                if all(item.get("rules_count", 0) for key in ("filters", "whitelist_filters") for item in state[key] if item.get('enabled', True)):
                     break
             except (OSError, KeyError):
                 pass
@@ -239,6 +262,24 @@ def main():
             time.sleep(0.2)
         else:
             raise RuntimeError("AGH readiness timeout")
+
+        def check_family(port, host, source, suffix, ipv4_only):
+            for qtype in (1, 28, 64, 65):
+                for tcp in (False, True):
+                    response = query(port, host, source, qtype, tcp, raw=True)
+                    suppressed = ipv4_only and qtype != 1
+                    assert response[3] & 15 == 0, (host, source, qtype, response)
+                    assert int.from_bytes(response[6:8], "big") == (0 if suppressed else 1), (host, source, qtype, response)
+                    if not suppressed:
+                        address = f"198.51.100.{suffix}" if qtype == 1 else f"2001:db8::{suffix}"
+                        family = socket.AF_INET if qtype == 1 else socket.AF_INET6
+                        assert socket.inet_pton(family, address) in response, (host, source, qtype, response)
+                    results.append({"dns_family": host, "source": source, "qtype": qtype,
+                                    "tcp": tcp, "ipv4_only": ipv4_only})
+
+        for source, suffix in (("127.0.0.2", 11), ("127.0.0.3", 22), ("127.0.0.1", 33)):
+            check_family(agh_port, "family-scope.example", source, suffix,
+                         ipv4_only and source == "127.0.0.2")
         for source, suffix in (("127.0.0.2", 11), ("127.0.0.3", 22)):
             for host, expected in (("fixture-cache.example", f"198.51.100.{suffix}"),
                                    ("fixture-allow.example", f"198.51.100.{suffix}"),
@@ -310,7 +351,7 @@ def main():
                 group['outbounds'].append(tag)
                 group['default'] = tag
         # Detect accidental use of the bootstrap resolver during business resolution.
-        sb['dns']['servers'].append({'type': 'udp', 'tag': 'fixture-bootstrap', 'server': '127.0.0.1', 'server_port': upstreams[2].port})
+        sb['dns']['servers'].append({'type': 'udp', 'tag': 'fixture-bootstrap', 'server': '127.0.0.1', 'server_port': upstreams[3].port})
         next(s for s in sb['dns']['servers'] if s['tag'] == 'dns-bootstrap')['servers'] = ['fixture-bootstrap']
         region_names = {
             '香港': ['HK test-a', 'HK test-b'], '台湾': ['TW test-a'],
@@ -349,10 +390,20 @@ def main():
         actual = query(dns_port, "fixture-tcp-chain.example", tcp=True)
         assert actual == (0, "198.51.100.11"), actual
         results.append({"through": "sing-box", "tcp": True, "answer": actual})
-        for qtype, expected in ((1, "0.0.0.0"), (28, "::")):
+        for qtype, expected in ((1, "0.0.0.0"), (28, None if ipv4_only else "::")):
             actual = query(dns_port, "fixture-block.example", qtype=qtype)
             assert actual == (0, expected), actual
             results.append({"through": "sing-box", "blocked_qtype": qtype, "answer": actual})
+        for mode in ['Rule', 'Proxy']:
+            api(clash_port, '/configs', {'mode': mode}, method='PATCH')
+            for host, foreign in [('family-foreign.example', True),
+                                  ('www.baidu.com', mode == 'Proxy')]:
+                check_family(dns_port, host, '127.0.0.1', 11 if foreign else 22,
+                             ipv4_only and foreign)
+        api(clash_port, '/configs', {'mode': 'Direct'}, method='PATCH')
+        # 设备 Direct 模式关闭 DNS hijack，查询回到 AGH 独立入口。
+        for host in ('family-foreign.example', 'www.baidu.com'):
+            check_family(agh_port, host, '127.0.0.1', 33, False)
         for mode in ['Rule', 'Proxy']:
             api(clash_port, '/configs', {'mode': mode}, method='PATCH')
             assert api(clash_port, '/configs')['mode'] == mode
@@ -362,7 +413,7 @@ def main():
                     ('shared-foreign.example', '198.51.100.11', 1, False),
                     ('tracking.miui.com', '198.51.100.22' if mode == 'Rule' else '198.51.100.11', 1, False),
                     ('aiclk.com', '0.0.0.0', 1, False),
-                    ('shared-foreign-aaaa.example', '2001:db8::11', 28, False),
+                    ('shared-foreign-aaaa.example', None if ipv4_only else '2001:db8::11', 28, False),
                     ('shared-foreign-tcp.example', '198.51.100.11', 1, True),
                 ]:
                     actual = query(port, host, source='127.0.0.5', qtype=qtype, tcp=tcp)
@@ -395,7 +446,7 @@ def main():
             connect_via_socks(mixed_port, host, 443 if host in ('1.1.1.1', '223.5.5.5') else 80)
             assert observed[-1][0] == expected, (host, observed[-1])
             results.append({'priority_route': host, 'outbound': expected, 'destination': observed[-1][1]})
-        assert not upstreams[2].questions, upstreams[2].questions
+        assert not upstreams[3].questions, upstreams[3].questions
         results.append({'business_lookup_never_uses_bootstrap': True})
         # Select real regional nodes and prove the connection reaches that node,
         # rather than the unrelated top-level Proxy selector.
@@ -498,17 +549,39 @@ def main():
         connect_via_socks(mixed_port, 'api.openai.com', 443)
         assert 'fixture/' + observed[-1][0] == auto['now'], (observed[-1], auto)
         results.append({'node_page_auto_follows': auto['now'], 'requires_subscription_exclude': True})
+        if ipv4_only:
+            def enable_policy(enabled):
+                data = {key: policy[key] for key in ('name', 'url')}
+                data['enabled'] = enabled
+                api(http_port, '/control/filtering/set_url', {'url': policy['url'], 'data': data, 'whitelist': False}, method='POST', decode=False)
+                # AGH 返回设置成功时，过滤引擎可能仍在异步重建。
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    state = api(http_port, '/control/filtering/check_host?name=family-rollback.example&qtype=AAAA&client=127.0.0.2')
+                    matched = any(rule.get('filter_list_id') == 2026102301 for rule in state.get('rules', []))
+                    if matched == enabled:
+                        api(http_port, '/control/cache_clear', method='POST', decode=False)
+                        return
+                    time.sleep(0.05)
+                raise RuntimeError(f'AGH compatibility list did not converge: {state}')
+
+            enable_policy(False)
+            check_family(agh_port, 'family-rollback.example', '127.0.0.2', 11, False)
+            assert query(agh_port, 'fixture-block.example', '127.0.0.2') == (0, '0.0.0.0')
+            enable_policy(True)
+            check_family(agh_port, 'family-rollback.example', '127.0.0.2', 11, True)
         upstreams[0].close()
         actual = query(dns_port, "failed-proxy-path.example")
         assert actual[0] != 0, actual
         assert "failed-proxy-path.example" not in upstreams[1].questions
         assert "failed-proxy-path.example" not in upstreams[2].questions
+        assert "failed-proxy-path.example" not in upstreams[3].questions
         results.append({"foreign_failure_no_direct_fallback": actual})
         for destination, port in shared_dns_targets:
             host = f'failed-shared-{port}.example'
             actual = query(port, host, source='127.0.0.5')
             assert actual[0] != 0, (destination, actual)
-            assert host not in upstreams[1].questions and host not in upstreams[2].questions
+            assert all(host not in upstream.questions for upstream in upstreams[1:])
             results.append({'simulated_shared_dns': destination, 'foreign_failure_no_direct_fallback': actual})
         process.terminate()
         process.wait(timeout=6)

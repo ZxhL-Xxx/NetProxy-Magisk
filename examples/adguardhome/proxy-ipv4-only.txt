@@ -1,0 +1,2 @@
+! 配套 ADG 列表 2026102301 使用本规则；只限制 NetProxy Proxy DNS 的地址发现。
+*$client=127.0.0.2,dnstype=AAAA|HTTPS|SVCB,dnsrewrite=NOERROR;;

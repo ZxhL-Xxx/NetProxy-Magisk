@@ -92,7 +92,9 @@ def build(base, output, sevenzip, go):
         inbound = json.loads((stage / 'config/inbound/inbound.json').read_text(encoding='utf-8'))
         if (inbound['backend'] != 'ebpf' or inbound['ebpf']['local']['data_plane'] != 'tc'
                 or inbound['ebpf']['shared']['data_plane'] != 'socket_assign'):
-            raise ValueError('RC1.6 requires the source TC/socket_assign profile')
+            raise ValueError('RC1.7 requires the source TC/socket_assign profile')
+        if inbound['ebpf']['local'].get('ipv6') is not True:
+            raise ValueError('IPv4 proxy DNS compatibility must retain local IPv6 interception')
         preset = stage / 'compat/agh'
         preset.mkdir(parents=True)
         shutil.copyfile(stage / 'config/singbox/config.json', preset / 'config.json')
@@ -100,11 +102,13 @@ def build(base, output, sevenzip, go):
         shutil.copyfile(ROOT / 'examples/subscription/metadata-exclude.txt', preset / 'subscription-exclude.txt')
         prop = stage / 'module.prop'
         prop.write_text('id=netproxy\nname=NetProxy (AGH RC1)\n'
-            'version=v8.6.1-agh-rc1.6\nversionCode=1095\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
+            'version=v8.6.1-agh-rc1.7\nversionCode=1096\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
             'description=Local AGH RC1 paired test; automatic DNS handoff; ad filtering by AGH\n'
             'webuiIcon=webroot/netproxy/favicon.svg\n', encoding='utf-8', newline='\n')
-        manifest = {'profile': '20261023-rc1-netproxy.6', 'kind': 'local-test-native-build',
+        manifest = {'profile': '20261023-rc1-netproxy.7', 'kind': 'local-test-native-build',
             'native_build': native,
+            'agh_required_profile': '20261023-dns-rc1-netproxy.2',
+            'proxy_dns_ipv4_policy': 'AGH list 2026102301; source 127.0.0.2; AAAA/HTTPS/SVCB NODATA',
             'dns_handoff': 'tagged RETURN in AGH chains; lifecycle + Worker events',
             'global_selection': '总模式 -> Proxy (NetProxy node page)',
             'subscription_exclude_requires_user_setting': True,
