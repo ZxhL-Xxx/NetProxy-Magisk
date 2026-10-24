@@ -160,6 +160,9 @@ if __name__ == '__main__':
     parser.add_argument('base', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--sevenzip', type=Path, required=True)
-    parser.add_argument('--go', type=Path, required=True)
+    parser.add_argument('--go', type=Path, default=shutil.which('go'),
+                        help='Go executable; defaults to the Go found in PATH')
     args = parser.parse_args()
+    if args.go is None:
+        parser.error('Go was not found in PATH; install Go or pass --go explicitly')
     build(args.base, args.output, args.sevenzip, args.go)
