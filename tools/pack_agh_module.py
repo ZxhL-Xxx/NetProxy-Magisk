@@ -1,8 +1,8 @@
-"""Build a LOCAL TEST module with a source-built Android ARM64 Native.
+"""Build a beta module with a source-built Android ARM64 Native.
 
 The signed APK, DEX, WebUI and core stay pinned to upstream v8.6.1.
 Native is rebuilt from a clean source commit with the repository's PGO profile.
-This is separate from the repository's CI source-build/release workflow.
+Used by beta CI and local builds; separate from the upstream signing workflow.
 """
 import argparse
 import hashlib
@@ -108,7 +108,7 @@ def build(base, output, sevenzip, go):
         metadata = re.sub(r'^versionCode=.*$', f'versionCode={count}', metadata, flags=re.MULTILINE)
         metadata = re.sub(r'^updateJson=.*\n?', '', metadata, flags=re.MULTILINE)
         prop.write_text(metadata, encoding='utf-8', newline='\n')
-        manifest = {'profile': 'beta', 'kind': 'local-test-native-build',
+        manifest = {'profile': 'beta', 'kind': 'source-native-build',
             'native_build': native,
             'agh_required_profile': '20261016-beta',
             'proxy_dns_ipv4_policy': 'AGH list 2026102301; source 127.0.0.2; AAAA/HTTPS/SVCB NODATA',

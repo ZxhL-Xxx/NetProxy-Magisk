@@ -1,0 +1,73 @@
+name: 构建 beta 可刷入模块
+
+on:
+  push:
+    branches: [beta]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    if: github.ref == 'refs/heads/beta'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: 拉取完整源码与提交记录
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: 配置 Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: src/native/netproxy/go.sum
+
+      - name: 配置契约测试所需 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 配置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: 验证源码与模块安装契约
+        env:
+          NETPROXY_CI_BUILD_DIR: ${{ runner.temp }}/netproxy-build
+        run: sh tests/ci_verify.sh
+
+      - name: 下载固定上游发行包
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/NetProxy_v8.6.1_1088.zip" \
+            https://github.com/Fanju6/NetProxy-Magisk/releases/download/v8.6.1/NetProxy_v8.6.1_1088.zip
+
+      - name: 从源码构建 Native 并生成可刷入模块
+        run: |
+          mkdir -p .agents/runs dist
+          python tools/pack_agh_module.py \
+            "$RUNNER_TEMP/NetProxy_v8.6.1_1088.zip" \
+            dist/NetProxy-v8.6.1-beta-arm64.zip \
+            --sevenzip "$(command -v 7z)"
+          cd dist
+          sha256sum -c NetProxy-v8.6.1-beta-arm64.zip.sha256
+
+      - name: 保存可刷入模块、摘要与构建记录
+        uses: actions/upload-artifact@v7
+        with:
+          name: NetProxy-beta-arm64
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

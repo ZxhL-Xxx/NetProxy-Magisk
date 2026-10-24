@@ -6,6 +6,8 @@
 
 本分支默认配置用于与 AdGuardHome RC1 配套：七个常用业务分流、国内外 DNS 客户端和统一延迟。配套测试包可直接刷入并自动设置，步骤见[刷入说明与验证边界](docs/config/adguardhome.md)。
 
+`beta` 分支推送后由 [GitHub Actions](https://github.com/ZxhL-Xxx/NetProxy-Magisk/actions/workflows/beta.yml) 自动验证并打包。在成功运行页面下载 `NetProxy-beta-arm64` artifact，解压后使用其中的模块 ZIP 刷入。Native 从当前源码编译；未修改的管理器、辅助 DEX、核心与 WebUI 使用固定摘要的上游发行组件，保留原签名。
+
 <p align="center">
   <strong>Android 系统级 sing-box 透明代理模块</strong><br>
   eBPF / TUN · 节点与订阅 · 分应用代理 · 共享网络

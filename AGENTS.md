@@ -224,6 +224,7 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 ## 版本与发布
 
 - 配套本地测试包自 RC1.6 起通过 `tools/pack_agh_module.py` 从干净提交重新构建 Android ARM64 Native，并校验 PGO、目标与哈希；APK、DEX、sing-box 与 WebUI 保持原发行包字节。Android/WebUI 源码变化仍需完整构建及原签名流程；禁止用旧 Native 冒充新源码产物。
+- `beta.yml` 在 beta 分支推送时复用上述配套打包器，先执行 Go/Shell 契约测试，再从源码编译 Native；APK、DEX、核心和 WebUI 固定引用摘要校验的上游发行包，不需要上游私有签名密钥。产物仅上传 Actions artifact，不创建 Release。Android/WebUI 源码变化会由打包器拒绝，届时必须使用完整签名构建流程。
 
 - `src/module/module.prop` 中只有 `version=` 由人手动维护；`versionCode` 由 CI 按提交数写入，手改会在下次构建被覆盖。
 - CI 打包的是 `src/module/` 的内容而非目录本身，模块 zip 根目录直接是 `module.prop`。新增顶层文件时确认它应当出现在模块根目录。
@@ -451,7 +452,7 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 ## 构建与发布
 
 - CI 与 Release 共用 `build-module.yml` 的并行任务图；模块任务完成 Go/Shell 验证、`netproxyctl`、WebUI 与内容压缩，Android 任务构建当前源码的 APK 与框架辅助 DEX，并用固定密钥签名 APK；打包同时校验辅助程序固定的公开证书指纹。共享工作流等待两者成功后汇合为唯一模块包，发布任务只下载最终产物，不重新编译或打包。Android 源码变化必须触发模块重打包；任一构建或所需验证失败均不得发布。
-- `verify.yml` 面向 Pull Request 与手动源码验证，只读取公开源码并按变更范围执行 Native、WebUI、Android 或文档检查；它不得读取签名、发布、Telegram 或统计 Secrets，不得打包、上传或发布产物。只有 `main` 上的 `ci.yml` 和 tag 发布工作流可以构建签名管理器与模块包。
+- `verify.yml` 面向 Pull Request 与手动源码验证，只读取公开源码并按变更范围执行 Native、WebUI、Android 或文档检查；它不得读取签名、发布、Telegram 或统计 Secrets，不得打包、上传或发布产物。上游完整签名管理器和模块包仍由 `main` 上的 `ci.yml` 和 tag 发布工作流构建；本 fork 的 beta 配套产物遵循上文的固定上游签名组件约束。
 - CI 变更范围从同分支上次成功验证的提交计算，不能只比较本次 push：前一轮被取消或失败的改动仍须验证；基线不可用时执行全部检查。
 - 版本计数与更新日志所需的 checkout 保留完整提交历史；可使用 `blob:none` 或稀疏检出减少历史文件下载。
 - 主仓库只发布 `NetProxy_<版本>_<构建号>.zip`，必须包含本次构建的管理器 APK。APK 只在首次解压检查时必需，用户安装或跳过后均清理，热切换校验不得要求它仍然存在。
