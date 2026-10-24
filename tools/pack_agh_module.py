@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -101,13 +102,15 @@ def build(base, output, sevenzip, go):
         shutil.copyfile(stage / 'config/inbound/inbound.json', preset / 'inbound.json')
         shutil.copyfile(ROOT / 'examples/subscription/metadata-exclude.txt', preset / 'subscription-exclude.txt')
         prop = stage / 'module.prop'
-        prop.write_text('id=netproxy\nname=NetProxy (AGH RC1)\n'
-            'version=v8.6.1-agh-rc1.7\nversionCode=1096\nauthor=Fanju; compatibility by ZxhL-Xxx\n'
-            'description=Local AGH RC1 paired test; automatic DNS handoff; ad filtering by AGH\n'
-            'webuiIcon=webroot/netproxy/favicon.svg\n', encoding='utf-8', newline='\n')
-        manifest = {'profile': '20261023-rc1-netproxy.7', 'kind': 'local-test-native-build',
+        # 展示元数据沿用源码，构建号与 CI 一样取提交数；本地包不启用官方自动更新。
+        metadata = prop.read_text(encoding='utf-8')
+        count = run(['git', 'rev-list', '--count', 'HEAD'], cwd=ROOT).decode().strip()
+        metadata = re.sub(r'^versionCode=.*$', f'versionCode={count}', metadata, flags=re.MULTILINE)
+        metadata = re.sub(r'^updateJson=.*\n?', '', metadata, flags=re.MULTILINE)
+        prop.write_text(metadata, encoding='utf-8', newline='\n')
+        manifest = {'profile': 'beta', 'kind': 'local-test-native-build',
             'native_build': native,
-            'agh_required_profile': '20261023-dns-rc1-netproxy.2',
+            'agh_required_profile': '20261016-beta',
             'proxy_dns_ipv4_policy': 'AGH list 2026102301; source 127.0.0.2; AAAA/HTTPS/SVCB NODATA',
             'dns_handoff': 'tagged RETURN in AGH chains; lifecycle + Worker events',
             'global_selection': '总模式 -> Proxy (NetProxy node page)',
